@@ -3,90 +3,118 @@
 @tailwind utilities;
 
 /*
- * Token system: light values are the unconditional default, an OS-level
- * dark preference overrides them, and an explicit choice from the theme
- * toggle (data-theme, set by lib/theme.ts) always wins over both. Every
- * component reads these variables through Tailwind's bg-, text-, and
- * border- utilities (see tailwind.config.ts) rather than hard-coded colors, so
- * nothing can drift out of sync between light and dark the way the first
- * draft of the design did.
+ * Token system: each hex/rgba value is defined exactly once (in the
+ * light/dark variable sets below), then activated through the public
+ * --bg/--text/etc. names. Precedence: unconditional light default, then an
+ * OS-level dark preference, then an explicit choice from the theme toggle
+ * (data-theme, set by lib/theme.ts) which always wins over both. Every
+ * component reads the public names through Tailwind's bg-, text-, and
+ * border- utilities (see tailwind.config.ts) rather than hard-coded colors.
  */
 :root {
-  --bg: #fafafb;
-  --surface: #ffffff;
-  --surface-2: #f2f2f4;
-  --border: #e5e5e9;
-  --text: #16171b;
-  --text-muted: #6b6d76;
-  --accent: #2a5fe0;
-  --accent-soft: rgba(42, 95, 224, 0.1);
-  --success: #0f9960;
-  --success-soft: rgba(15, 153, 96, 0.12);
-  --warning: #b45309;
-  --warning-soft: rgba(180, 83, 9, 0.12);
-  --danger: #dc2626;
-  --danger-soft: rgba(220, 38, 38, 0.1);
-  --shadow: 0 1px 2px rgba(16, 17, 20, 0.04);
+  --bg-light: #fafafb;
+  --surface-light: #ffffff;
+  --surface-2-light: #f2f2f4;
+  --border-light: #e5e5e9;
+  --border-strong-light: #d4d4da;
+  --text-light: #16171b;
+  --text-muted-light: #6b6d76;
+  --text-subtle-light: #9a9ca4;
+  --accent-light: #2a5fe0;
+  --accent-soft-light: rgba(42, 95, 224, 0.1);
+  --success-light: #0f9960;
+  --success-soft-light: rgba(15, 153, 96, 0.12);
+  --warning-light: #b45309;
+  --warning-soft-light: rgba(180, 83, 9, 0.12);
+  --danger-light: #dc2626;
+  --danger-soft-light: rgba(220, 38, 38, 0.1);
+  --shadow-light: 0 1px 2px rgba(16, 17, 20, 0.04);
+  --shadow-lg-light: 0 12px 32px -8px rgba(16, 17, 20, 0.16), 0 2px 6px rgba(16, 17, 20, 0.06);
+
+  --bg-dark: #0a0b0d;
+  --surface-dark: #17181c;
+  --surface-2-dark: #1f2025;
+  --border-dark: #26272d;
+  --border-strong-dark: #34353c;
+  --text-dark: #edeef0;
+  --text-muted-dark: #8b8d96;
+  --text-subtle-dark: #5d5f68;
+  --accent-dark: #4c8cff;
+  --accent-soft-dark: rgba(76, 140, 255, 0.14);
+  --success-dark: #34d399;
+  --success-soft-dark: rgba(52, 211, 153, 0.14);
+  --warning-dark: #f59e0b;
+  --warning-soft-dark: rgba(245, 158, 11, 0.14);
+  --danger-dark: #f87171;
+  --danger-soft-dark: rgba(248, 113, 113, 0.14);
+  --shadow-dark: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg-dark: 0 16px 40px -8px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+
+  --bg: var(--bg-light);
+  --surface: var(--surface-light);
+  --surface-2: var(--surface-2-light);
+  --border: var(--border-light);
+  --border-strong: var(--border-strong-light);
+  --text: var(--text-light);
+  --text-muted: var(--text-muted-light);
+  --text-subtle: var(--text-subtle-light);
+  --accent: var(--accent-light);
+  --accent-soft: var(--accent-soft-light);
+  --success: var(--success-light);
+  --success-soft: var(--success-soft-light);
+  --warning: var(--warning-light);
+  --warning-soft: var(--warning-soft-light);
+  --danger: var(--danger-light);
+  --danger-soft: var(--danger-soft-light);
+  --shadow: var(--shadow-light);
+  --shadow-lg: var(--shadow-lg-light);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0a0b0d;
-    --surface: #17181c;
-    --surface-2: #1f2025;
-    --border: #26272d;
-    --text: #edeef0;
-    --text-muted: #8b8d96;
-    --accent: #4c8cff;
-    --accent-soft: rgba(76, 140, 255, 0.14);
-    --success: #34d399;
-    --success-soft: rgba(52, 211, 153, 0.14);
-    --warning: #f59e0b;
-    --warning-soft: rgba(245, 158, 11, 0.14);
-    --danger: #f87171;
-    --danger-soft: rgba(248, 113, 113, 0.14);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  :root:not([data-theme="light"]) {
+    --bg: var(--bg-dark);
+    --surface: var(--surface-dark);
+    --surface-2: var(--surface-2-dark);
+    --border: var(--border-dark);
+    --border-strong: var(--border-strong-dark);
+    --text: var(--text-dark);
+    --text-muted: var(--text-muted-dark);
+    --text-subtle: var(--text-subtle-dark);
+    --accent: var(--accent-dark);
+    --accent-soft: var(--accent-soft-dark);
+    --success: var(--success-dark);
+    --success-soft: var(--success-soft-dark);
+    --warning: var(--warning-dark);
+    --warning-soft: var(--warning-soft-dark);
+    --danger: var(--danger-dark);
+    --danger-soft: var(--danger-soft-dark);
+    --shadow: var(--shadow-dark);
+    --shadow-lg: var(--shadow-lg-dark);
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0a0b0d;
-  --surface: #17181c;
-  --surface-2: #1f2025;
-  --border: #26272d;
-  --text: #edeef0;
-  --text-muted: #8b8d96;
-  --accent: #4c8cff;
-  --accent-soft: rgba(76, 140, 255, 0.14);
-  --success: #34d399;
-  --success-soft: rgba(52, 211, 153, 0.14);
-  --warning: #f59e0b;
-  --warning-soft: rgba(245, 158, 11, 0.14);
-  --danger: #f87171;
-  --danger-soft: rgba(248, 113, 113, 0.14);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --bg: var(--bg-dark);
+  --surface: var(--surface-dark);
+  --surface-2: var(--surface-2-dark);
+  --border: var(--border-dark);
+  --border-strong: var(--border-strong-dark);
+  --text: var(--text-dark);
+  --text-muted: var(--text-muted-dark);
+  --text-subtle: var(--text-subtle-dark);
+  --accent: var(--accent-dark);
+  --accent-soft: var(--accent-soft-dark);
+  --success: var(--success-dark);
+  --success-soft: var(--success-soft-dark);
+  --warning: var(--warning-dark);
+  --warning-soft: var(--warning-soft-dark);
+  --danger: var(--danger-dark);
+  --danger-soft: var(--danger-soft-dark);
+  --shadow: var(--shadow-dark);
+  --shadow-lg: var(--shadow-lg-dark);
   color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-  --bg: #fafafb;
-  --surface: #ffffff;
-  --surface-2: #f2f2f4;
-  --border: #e5e5e9;
-  --text: #16171b;
-  --text-muted: #6b6d76;
-  --accent: #2a5fe0;
-  --accent-soft: rgba(42, 95, 224, 0.1);
-  --success: #0f9960;
-  --success-soft: rgba(15, 153, 96, 0.12);
-  --warning: #b45309;
-  --warning-soft: rgba(180, 83, 9, 0.12);
-  --danger: #dc2626;
-  --danger-soft: rgba(220, 38, 38, 0.1);
-  --shadow: 0 1px 2px rgba(16, 17, 20, 0.04);
-  color-scheme: light;
 }
 
 * {
@@ -97,9 +125,24 @@ body {
   background: var(--bg);
   color: var(--text);
   font-size: 14px;
+  font-feature-settings: "cv11", "ss01";
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
 }

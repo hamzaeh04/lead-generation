@@ -163,7 +163,7 @@ async def find_company_decision_makers(
 ):
     """Finds real people at this company filtered by job title — owner,
     founder, CEO, etc. by default — via the highest-priority enabled
-    person_discovery provider (Apollo, PDL, ...), waterfalling to the next
+    person_discovery provider (currently Apollo), waterfalling to the next
     on failure. Never guesses a name/email: an empty result is a normal
     outcome, not an error, when nothing is found."""
     service = DecisionMakerService(session, settings)

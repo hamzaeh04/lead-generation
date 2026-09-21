@@ -1,11 +1,10 @@
 """Shared provider contracts.
 
-Every provider integration (Apollo, PDL, SerpApi, Apify, PhantomBuster,
-Hunter, OpenAI, SMTP, ...) implements one of the ABCs in the sibling
-`app/providers/<category>/base.py` modules. The core application (services,
-API routes) only ever depends on these interfaces — never on a concrete
-provider class — so providers can be added, removed, or reordered without
-touching business logic.
+Every provider integration (Apollo, Smartlead, Groq, SMTP, ...) implements
+one of the ABCs in the sibling `app/providers/<category>/base.py` modules.
+The core application (services, API routes) only ever depends on these
+interfaces — never on a concrete provider class — so providers can be
+added, removed, or reordered without touching business logic.
 
 A provider must never fabricate data. If a field is unknown, it returns
 None; if a whole record can't be produced, it returns None/empty list.
@@ -24,13 +23,6 @@ from typing import Any
 class ProviderCategory(StrEnum):
     COMPANY_DISCOVERY = "company_discovery"
     PERSON_DISCOVERY = "person_discovery"
-    LOCAL_BUSINESS_DISCOVERY = "local_business_discovery"
-    WEBSITE_DISCOVERY = "website_discovery"
-    ENRICHMENT = "enrichment"
-    EMAIL_FINDER = "email_finder"
-    EMAIL_VERIFIER = "email_verifier"
-    SOCIAL_SIGNAL = "social_signal"
-    INTENT = "intent"
     AI = "ai"
     EMAIL_SENDER = "email_sender"
 
@@ -100,6 +92,18 @@ class NormalizedContact:
     linkedin_url: str | None = None
     company_name: str | None = None
     company_domain: str | None = None
+    #: This person's own location, when a provider reports it per-person
+    #: rather than only at the company level.
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    #: Firmographic fields a provider reports alongside this specific
+    #: search result (see Contact model for why these live here, not on
+    #: Company, and why bands are kept as-is rather than parsed).
+    industry: str | None = None
+    sub_industry: str | None = None
+    company_headcount: str | None = None
+    company_revenue: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,12 +127,18 @@ class DiscoveryCriteria:
     job_titles: list[str] = field(default_factory=list)
     seniorities: list[str] = field(default_factory=list)
     limit: int = 25
+    #: Smartlead has no free-text search — every call is scoped to one
+    #: existing campaign. Other providers ignore this field.
+    campaign_id: str | None = None
+    #: Passthrough filters a specific provider understands but that don't
+    #: warrant a first-class field here (e.g. Smartlead's emailStatus).
+    extra_filters: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseProvider(ABC):
     """Common identity every concrete provider must expose."""
 
-    #: Machine-readable provider name, e.g. "apollo", "hunter", "csv_import".
+    #: Machine-readable provider name, e.g. "apollo", "smartlead", "csv_import".
     name: str
     category: ProviderCategory
 

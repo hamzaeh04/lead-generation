@@ -4,6 +4,11 @@ Returns None when the required API key isn't configured — callers turn
 that into a clear "provider not configured" response rather than a crash.
 This is the one place in the codebase that knows about concrete provider
 classes; everything else depends only on the ABCs in app/providers/base.py.
+
+Active builders: Apollo (company + person discovery), Smartlead (person
+discovery via campaign leads), Groq (AI personalization). OpenAI and SMTP
+stay commented out (inert, not deleted) pending future work — same
+pattern as before, not something this trim touches.
 """
 from __future__ import annotations
 
@@ -11,57 +16,29 @@ from app.core.config import Settings
 # from app.providers.ai.openai_provider import OpenAIProvider
 from app.providers.ai.groq_provider import GroqProvider
 from app.providers.base import BaseProvider, ProviderCategory, ProviderUnavailableError
-from app.providers.email_finders.hunter_provider import HunterEmailFinderProvider
 # from app.providers.email_senders.smtp_provider import SMTPEmailSenderProvider
-from app.providers.email_verifiers.hunter_provider import HunterEmailVerifierProvider
-# from app.providers.enrichment.pdl_provider import PeopleDataLabsEnrichmentProvider
-# from app.providers.lead_sources.apollo_provider import ApolloCompanyDiscoveryProvider
-from app.providers.lead_sources.osm_provider import OSMLocalBusinessProvider
-# from app.providers.lead_sources.pdl_provider import PeopleDataLabsCompanyDiscoveryProvider
-from app.providers.lead_sources.serpapi_provider import SerpApiLocalBusinessProvider
-# from app.providers.people_sources.apollo_provider import ApolloPersonDiscoveryProvider
-from app.providers.people_sources.hunter_provider import HunterPersonDiscoveryProvider
-from app.providers.people_sources.pdl_provider import PeopleDataLabsPersonDiscoveryProvider
+from app.providers.lead_sources.apollo_provider import ApolloCompanyDiscoveryProvider
+from app.providers.people_sources.apollo_provider import ApolloPersonDiscoveryProvider
+from app.providers.people_sources.smartlead_provider import SmartleadPersonDiscoveryProvider
 
-# Pipeline trimmed down for now to: serpapi/openstreetmap (local business
-# discovery) -> hunter (email finder + verifier) only. Apollo, PDL, OpenAI,
-# and SMTP builders are commented out (not deleted) so they're inert but
-# easy to bring back — the matching registry rows are disabled to match.
-# env_var is None for providers that need no credentials at all (e.g. OSM) —
-# those are always buildable, never gated by a missing-API-key check.
 _BUILDERS: dict[tuple[str, ProviderCategory], tuple[str | None, type]] = {
-    # ("apollo", ProviderCategory.COMPANY_DISCOVERY): ("APOLLO_API_KEY", ApolloCompanyDiscoveryProvider),
-    # ("apollo", ProviderCategory.PERSON_DISCOVERY): ("APOLLO_API_KEY", ApolloPersonDiscoveryProvider),
-    # ("people_data_labs", ProviderCategory.COMPANY_DISCOVERY): (
-    #     "PDL_API_KEY", PeopleDataLabsCompanyDiscoveryProvider,
-    # ),
-    ("people_data_labs", ProviderCategory.PERSON_DISCOVERY): (
-        "PDL_API_KEY", PeopleDataLabsPersonDiscoveryProvider,
+    ("apollo", ProviderCategory.COMPANY_DISCOVERY): ("APOLLO_API_KEY", ApolloCompanyDiscoveryProvider),
+    ("apollo", ProviderCategory.PERSON_DISCOVERY): ("APOLLO_API_KEY", ApolloPersonDiscoveryProvider),
+    ("smartlead", ProviderCategory.PERSON_DISCOVERY): (
+        "SMARTLEAD_API_KEY", SmartleadPersonDiscoveryProvider,
     ),
-    ("hunter", ProviderCategory.PERSON_DISCOVERY): ("HUNTER_API_KEY", HunterPersonDiscoveryProvider),
-    # ("people_data_labs", ProviderCategory.ENRICHMENT): (
-    #     "PDL_API_KEY", PeopleDataLabsEnrichmentProvider,
-    # ),
-    ("serpapi", ProviderCategory.LOCAL_BUSINESS_DISCOVERY): (
-        "SERPAPI_API_KEY", SerpApiLocalBusinessProvider,
-    ),
-    ("hunter", ProviderCategory.EMAIL_FINDER): ("HUNTER_API_KEY", HunterEmailFinderProvider),
-    ("hunter", ProviderCategory.EMAIL_VERIFIER): ("HUNTER_API_KEY", HunterEmailVerifierProvider),
-    ("openstreetmap", ProviderCategory.LOCAL_BUSINESS_DISCOVERY): (None, OSMLocalBusinessProvider),
-    # ("openai", ProviderCategory.AI): ("OPENAI_API_KEY", OpenAIProvider),
     ("groq", ProviderCategory.AI): ("GROQ_API_KEY", GroqProvider),
+    # ("openai", ProviderCategory.AI): ("OPENAI_API_KEY", OpenAIProvider),
     # ("smtp", ProviderCategory.EMAIL_SENDER): ("SMTP_HOST", SMTPEmailSenderProvider),
 }
 
 
 # Credential env-var per provider, kept independent of _BUILDERS so that
 # "not configured" error messages stay accurate even for providers whose
-# builder entry above is commented out during the current trim.
+# builder entry above is commented out.
 _ENV_VARS: dict[str, str] = {
     "apollo": "APOLLO_API_KEY",
-    "people_data_labs": "PDL_API_KEY",
-    "hunter": "HUNTER_API_KEY",
-    "serpapi": "SERPAPI_API_KEY",
+    "smartlead": "SMARTLEAD_API_KEY",
     "groq": "GROQ_API_KEY",
     "openai": "OPENAI_API_KEY",
     "smtp": "SMTP_HOST",

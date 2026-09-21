@@ -9,7 +9,6 @@ from app.api.health import router as health_router
 from app.api.unsubscribe import router as unsubscribe_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.analytics import router as analytics_router
-from app.api.v1.apify import router as apify_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.campaigns import router as campaigns_router
 from app.api.v1.companies import router as companies_router
@@ -17,7 +16,7 @@ from app.api.v1.icp import router as icp_router
 from app.api.v1.leads import router as leads_router
 from app.api.v1.providers import router as providers_router
 from app.api.v1.search import router as search_router
-from app.api.v1.social import router as social_router
+from app.api.v1.search_batches import router as search_batches_router
 from app.api.v1.suppressions import router as suppressions_router
 from app.api.v1.tags import router as tags_router
 from app.api.v1.webhooks import router as webhooks_router
@@ -65,11 +64,10 @@ app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(workspaces_router, prefix=settings.API_V1_PREFIX)
 app.include_router(companies_router, prefix=settings.API_V1_PREFIX)
 app.include_router(icp_router, prefix=settings.API_V1_PREFIX)
-app.include_router(apify_router, prefix=settings.API_V1_PREFIX)
 app.include_router(leads_router, prefix=settings.API_V1_PREFIX)
 app.include_router(providers_router, prefix=settings.API_V1_PREFIX)
 app.include_router(search_router, prefix=settings.API_V1_PREFIX)
-app.include_router(social_router, prefix=settings.API_V1_PREFIX)
+app.include_router(search_batches_router, prefix=settings.API_V1_PREFIX)
 app.include_router(campaigns_router, prefix=settings.API_V1_PREFIX)
 app.include_router(suppressions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tags_router, prefix=settings.API_V1_PREFIX)

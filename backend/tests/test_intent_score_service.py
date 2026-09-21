@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.models.intent_signal import IntentSignal
-from app.providers.intent.base import IntentSignalType
+from app.models.intent_signal import IntentSignalType
 from app.services.intent_score_service import compute_intent_score, decay_multiplier
 
 

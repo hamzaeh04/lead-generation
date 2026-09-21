@@ -74,7 +74,7 @@ async def test_superuser_cannot_remove_own_superuser_access(client, db_session, 
 
 async def test_admin_provider_panel_merges_config_and_health(client, db_session, unique_email):
     provider_config = ProviderConfig(
-        provider="hunter", category=ProviderCategory.EMAIL_FINDER, enabled=True,
+        provider="smartlead", category=ProviderCategory.PERSON_DISCOVERY, enabled=True,
         priority=1, monthly_free_quota=25,
     )
     db_session.add(provider_config)
@@ -88,10 +88,10 @@ async def test_admin_provider_panel_merges_config_and_health(client, db_session,
     )
     assert response.status_code == 200
     rows = response.json()
-    hunter_row = next(r for r in rows if r["provider"] == "hunter")
-    assert hunter_row["monthly_free_quota"] == 25
-    assert hunter_row["quota_remaining"] == 25
-    assert hunter_row["total_calls"] == 0
+    smartlead_row = next(r for r in rows if r["provider"] == "smartlead")
+    assert smartlead_row["monthly_free_quota"] == 25
+    assert smartlead_row["quota_remaining"] == 25
+    assert smartlead_row["total_calls"] == 0
 
 
 async def test_non_superuser_cannot_view_admin_provider_panel(client, unique_email):

@@ -161,6 +161,7 @@ export interface AnalyticsOverview {
   total_contacts: number;
   verified_emails: number;
   high_intent_leads: number;
+  high_icp_leads: number | null;
   meetings: number;
   conversions: number;
   emails_sent: number;
@@ -334,8 +335,20 @@ export interface Contact {
   email: string | null;
   phone: string | null;
   linkedin_url: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  industry: string | null;
+  sub_industry: string | null;
+  company_headcount: string | null;
+  company_revenue: string | null;
   status: LeadStatus;
   field_provenance: Record<string, unknown>;
+  /** True only when a source (currently just Apollo) supports the on-demand
+   * /reveal action — false for masked leads with no API-based unlock
+   * (e.g. Smartlead), so the UI never shows a Reveal button that would
+   * just fail. */
+  revealable: boolean;
   first_seen: string;
   last_seen: string;
 }
@@ -379,38 +392,22 @@ export async function updateLeadStatus(
   return data;
 }
 
-export interface FindEmailResponse {
-  contact: Contact;
-  email_found: boolean;
-  confidence: string | null;
+export interface BulkStatusUpdateResponse {
+  updated: number;
+  not_found: number;
 }
 
-export async function findLeadEmail(workspaceId: string, contactId: string): Promise<FindEmailResponse> {
-  const { data } = await api.post<FindEmailResponse>(
-    `/leads/${contactId}/find-email`,
-    {},
+export async function bulkUpdateLeadStatus(
+  workspaceId: string,
+  contactIds: string[],
+  status: LeadStatus
+): Promise<BulkStatusUpdateResponse> {
+  const { data } = await api.patch<BulkStatusUpdateResponse>(
+    "/leads/bulk-status",
+    { contact_ids: contactIds, status },
     { params: { workspace_id: workspaceId } }
   );
   return data;
-}
-
-export type VerificationStatus = "valid" | "invalid" | "risky" | "unknown";
-
-export interface EmailVerification {
-  id: string;
-  contact_id: string;
-  email: string;
-  provider: string;
-  verification_status: VerificationStatus;
-  verification_score: number | null;
-  mx_records: boolean | null;
-  smtp_check: boolean | null;
-  accept_all: boolean | null;
-  disposable: boolean | null;
-  free_provider: boolean | null;
-  role_account: boolean | null;
-  raw_response: Record<string, unknown>;
-  verified_at: string;
 }
 
 export interface LeadScore {
@@ -424,29 +421,6 @@ export async function getLeadScore(workspaceId: string, contactId: string): Prom
     params: { workspace_id: workspaceId },
   });
   return data;
-}
-
-export async function verifyLeadEmail(workspaceId: string, contactId: string): Promise<EmailVerification> {
-  const { data } = await api.post<EmailVerification>(
-    `/leads/${contactId}/verify`,
-    {},
-    { params: { workspace_id: workspaceId } }
-  );
-  return data;
-}
-
-export async function getLatestLeadVerification(
-  workspaceId: string,
-  contactId: string
-): Promise<EmailVerification | null> {
-  try {
-    const { data } = await api.get<EmailVerification>(`/leads/${contactId}/verification`, {
-      params: { workspace_id: workspaceId },
-    });
-    return data;
-  } catch {
-    return null;
-  }
 }
 
 export interface AIGeneration {
@@ -576,18 +550,7 @@ export async function tagLead(workspaceId: string, contactId: string, tagId: str
 // Discovery / search
 // ---------------------------------------------------------------------------
 
-export type ProviderCategory =
-  | "company_discovery"
-  | "person_discovery"
-  | "local_business_discovery"
-  | "website_discovery"
-  | "enrichment"
-  | "email_finder"
-  | "email_verifier"
-  | "social_signal"
-  | "intent"
-  | "ai"
-  | "email_sender";
+export type ProviderCategory = "company_discovery" | "person_discovery" | "ai" | "email_sender";
 
 export interface ProviderConfig {
   id: string;
@@ -669,11 +632,18 @@ export interface DiscoveryCriteria {
   job_titles?: string[];
   seniorities?: string[];
   limit?: number;
+  /** Smartlead-specific: the campaign to pull existing leads from. */
+  campaign_id?: string;
+  /** Passthrough filters a specific provider understands (e.g. Smartlead's emailStatus). */
+  extra_filters?: Record<string, unknown>;
 }
 
 export interface SearchExecuteResponse {
   provider: string;
   category: ProviderCategory;
+  /** null when the search returned nothing — no batch is created for a
+   * zero-result run. */
+  batch_id: string | null;
   companies_created: number;
   companies_matched: number;
   contacts_created: number;
@@ -689,6 +659,63 @@ export async function executeSearch(payload: {
   criteria: DiscoveryCriteria;
 }): Promise<SearchExecuteResponse> {
   const { data } = await api.post<SearchExecuteResponse>("/search/execute", payload);
+  return data;
+}
+
+export async function parseProspectPrompt(payload: {
+  workspace_id: string;
+  provider: string;
+  prompt: string;
+}): Promise<{ criteria: DiscoveryCriteria }> {
+  const { data } = await api.post<{ criteria: DiscoveryCriteria }>("/search/parse-prompt", payload);
+  return data;
+}
+
+export interface SearchBatch {
+  id: string;
+  sequence: number;
+  provider: string;
+  category: ProviderCategory;
+  criteria_snapshot: Record<string, unknown>;
+  companies_created: number;
+  companies_matched: number;
+  contacts_created: number;
+  contacts_matched: number;
+  created_at: string;
+}
+
+export interface SearchBatchDetail extends SearchBatch {
+  contacts: Contact[];
+}
+
+export async function listSearchBatches(
+  workspaceId: string,
+  params: { limit?: number; offset?: number } = {}
+): Promise<SearchBatch[]> {
+  const { data } = await api.get<SearchBatch[]>("/search-batches", {
+    params: { workspace_id: workspaceId, ...params },
+  });
+  return data;
+}
+
+export async function getSearchBatch(workspaceId: string, batchId: string): Promise<SearchBatchDetail> {
+  const { data } = await api.get<SearchBatchDetail>(`/search-batches/${batchId}`, {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export interface RevealResponse {
+  contact: Contact;
+  revealed: boolean;
+}
+
+export async function revealLead(workspaceId: string, contactId: string): Promise<RevealResponse> {
+  const { data } = await api.post<RevealResponse>(
+    `/leads/${contactId}/reveal`,
+    {},
+    { params: { workspace_id: workspaceId } }
+  );
   return data;
 }
 
@@ -757,6 +784,24 @@ export async function addCampaignStep(
     params: { workspace_id: workspaceId },
   });
   return data;
+}
+
+export async function updateCampaignStep(
+  workspaceId: string,
+  campaignId: string,
+  stepId: string,
+  payload: Partial<{ step_number: number; delay_days: number; subject: string; body: string; active: boolean }>
+): Promise<CampaignStep> {
+  const { data } = await api.patch<CampaignStep>(`/campaigns/${campaignId}/steps/${stepId}`, payload, {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export async function deleteCampaignStep(workspaceId: string, campaignId: string, stepId: string): Promise<void> {
+  await api.delete(`/campaigns/${campaignId}/steps/${stepId}`, {
+    params: { workspace_id: workspaceId },
+  });
 }
 
 export interface EnrollResponse {

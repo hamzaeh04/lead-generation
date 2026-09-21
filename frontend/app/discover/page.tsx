@@ -1,293 +1,294 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Check, EyeOff, Search, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { ProspectPanel } from "@/components/discover/ProspectPanel";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/Spinner";
-import { executeSearch, listProviders, type ProviderCategory } from "@/lib/api";
-import { BUSINESS_TYPES, COUNTRIES, RESULT_LIMITS, US_STATES } from "@/lib/discover-options";
+import { StatCard } from "@/components/ui/StatCard";
+import { cn } from "@/lib/cn";
+import { type Contact, type DiscoveryCriteria, executeSearch, listProviders } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
+import { revealLead } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 
-const categories: { value: ProviderCategory; label: string }[] = [
-  { value: "company_discovery", label: "Companies" },
-  { value: "person_discovery", label: "People" },
-  { value: "local_business_discovery", label: "Local businesses" },
-  { value: "website_discovery", label: "Websites" },
-];
+const PROVIDER_INFO: Record<string, { label: string; description: string; badgeClass: string; icon: typeof Zap }> = {
+  apollo: {
+    label: "Apollo",
+    description: "270M+ verified people — AI prompt or structured filters",
+    badgeClass: "bg-indigo-500",
+    icon: Zap,
+  },
+  smartlead: {
+    label: "Smartlead SmartProspect",
+    description: "AI-powered prospect finder — 270M+ verified profiles, or import from a campaign",
+    badgeClass: "bg-gradient-to-br from-violet-500 to-pink-500",
+    icon: Sparkles,
+  },
+};
 
-const inputClass =
-  "rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-fg placeholder:text-fgMuted focus:border-accent focus:outline-none";
+function ProviderCard({
+  providerName,
+  active,
+  onClick,
+}: {
+  providerName: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const info = PROVIDER_INFO[providerName] ?? {
+    label: providerName,
+    description: "",
+    badgeClass: "bg-fgSubtle",
+    icon: Zap,
+  };
+  const Icon = info.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-start gap-3 rounded-xl border p-4 text-left shadow-card transition-all",
+        active
+          ? "border-accent bg-accentSoft"
+          : "border-border bg-surface hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-popover"
+      )}
+    >
+      <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white", info.badgeClass)}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="text-md font-semibold text-fg">{info.label}</span>
+          {active && <Check className="h-3.5 w-3.5 shrink-0 text-accent" />}
+        </span>
+        <span className="mt-0.5 block text-sm text-fgMuted">{info.description}</span>
+      </span>
+    </button>
+  );
+}
+
+function ContactResultRow({
+  contact,
+  workspaceId,
+  provider,
+}: {
+  contact: Contact;
+  workspaceId: string;
+  provider: string;
+}) {
+  const [revealed, setRevealed] = useState<Contact>(contact);
+
+  const revealMutation = useMutation({
+    mutationFn: () => revealLead(workspaceId, contact.id),
+    onSuccess: (result) => {
+      setRevealed(result.contact);
+      toast[result.revealed ? "success" : "info"](
+        result.revealed ? "Details revealed" : "Nothing new to reveal for this lead"
+      );
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <Link href={`/leads/${revealed.id}`} className="min-w-0 flex-1 hover:text-accent">
+        <span className="block truncate text-base font-medium text-fg">
+          {revealed.full_name ?? revealed.email ?? "Unnamed contact"}
+        </span>
+        <span className="block truncate text-sm text-fgMuted">
+          {revealed.job_title ?? "—"}
+          {revealed.company_name ? ` at ${revealed.company_name}` : ""}
+          {revealed.city || revealed.state
+            ? ` · ${[revealed.city, revealed.state].filter(Boolean).join(", ")}`
+            : ""}
+        </span>
+      </Link>
+      {revealed.email ? (
+        <span className="ml-3 shrink-0 text-sm text-fgMuted">{revealed.email}</span>
+      ) : provider === "apollo" ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-3 shrink-0"
+          loading={revealMutation.isPending}
+          onClick={() => revealMutation.mutate()}
+        >
+          <EyeOff className="h-3 w-3" />
+          Reveal
+        </Button>
+      ) : (
+        <span className="ml-3 shrink-0 text-sm text-fgMuted">—</span>
+      )}
+    </div>
+  );
+}
 
 function DiscoverContent() {
   const { activeWorkspace } = useWorkspace();
   const workspaceId = activeWorkspace?.id;
 
-  const [category, setCategory] = useState<ProviderCategory>("company_discovery");
   const [provider, setProvider] = useState("");
-  const [businessType, setBusinessType] = useState("");
-  const [customKeyword, setCustomKeyword] = useState("");
-  const [city, setCity] = useState("");
-  const [country, setCountry] = useState("United States");
-  const [state, setState] = useState("");
-  const [customState, setCustomState] = useState("");
-  const [limit, setLimit] = useState(25);
-
-  const industry = businessType || undefined;
-  const keywords = businessType ? undefined : customKeyword || undefined;
-  const resolvedState = country === "United States" ? state : customState;
+  const [criteria, setCriteria] = useState<DiscoveryCriteria>({ limit: 25 });
 
   const providersQuery = useQuery({ queryKey: ["providers"], queryFn: listProviders });
 
-  const availableProviders = useMemo(
-    () => (providersQuery.data ?? []).filter((p) => p.enabled && p.category === category),
-    [providersQuery.data, category]
+  const availableProviders = (providersQuery.data ?? []).filter(
+    (p) => p.enabled && p.category === "person_discovery"
   );
-
   const selectedProvider = provider || availableProviders[0]?.provider || "";
 
   const searchMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (searchCriteria: DiscoveryCriteria) =>
       executeSearch({
         workspace_id: workspaceId!,
         provider: selectedProvider,
-        category,
-        criteria: {
-          keywords,
-          industry,
-          city: city || undefined,
-          state: resolvedState || undefined,
-          country: country || undefined,
-          limit,
-        },
+        category: "person_discovery",
+        criteria: searchCriteria,
       }),
+    onError: (error) => toast.error(getErrorMessage(error, "Search failed — the provider may be unavailable.")),
   });
 
+  const results = searchMutation.data;
+  const hasResults = results && (results.companies.length > 0 || results.contacts.length > 0);
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-5">
       <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">Discover</h1>
-        <p className="mt-1 text-[13px] text-fgMuted">
-          Run a real provider search — results are persisted as companies and contacts, never invented.
-        </p>
+        <p className="mb-2 text-sm font-medium text-fgMuted">Data source</p>
+        {providersQuery.isSuccess && availableProviders.length === 0 ? (
+          <p className="text-sm text-danger">
+            No lead-prospecting provider is enabled. Ask a workspace admin to enable Apollo or Smartlead on the
+            Providers page.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {availableProviders.map((p) => (
+              <ProviderCard
+                key={p.id}
+                providerName={p.provider}
+                active={selectedProvider === p.provider}
+                onClick={() => {
+                  setProvider(p.provider);
+                  setCriteria({ limit: 25 });
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      <Card className="flex flex-col gap-4">
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (selectedProvider && workspaceId) searchMutation.mutate();
-          }}
-        >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-              Category
-              <select
-                value={category}
-                onChange={(e) => {
-                  setCategory(e.target.value as ProviderCategory);
-                  setProvider("");
-                }}
-                className={inputClass}
-              >
-                {categories.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+      <div className="flex flex-col gap-6">
+        <Card className="flex w-full flex-col gap-4">
+          {selectedProvider === "apollo" || selectedProvider === "smartlead" ? (
+            <ProspectPanel
+              provider={selectedProvider}
+              workspaceId={workspaceId}
+              criteria={criteria}
+              onCriteriaChange={setCriteria}
+              onSearch={(searchCriteria) => searchMutation.mutate(searchCriteria)}
+              searching={searchMutation.isPending}
+            />
+          ) : (
+            <p className="text-sm text-fgMuted">Choose a data source above to start searching.</p>
+          )}
 
-            <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-              Provider
-              <select
-                value={selectedProvider}
-                onChange={(e) => setProvider(e.target.value)}
-                className={inputClass}
-                disabled={availableProviders.length === 0}
-              >
-                {availableProviders.length === 0 ? (
-                  <option value="">No enabled provider for this category</option>
-                ) : (
-                  availableProviders.map((p) => (
-                    <option key={p.id} value={p.provider}>
-                      {p.provider}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-          </div>
+          {searchMutation.isError && (
+            <p className="text-sm text-danger">
+              {getErrorMessage(searchMutation.error, "Search failed — the provider may be unavailable.")}
+            </p>
+          )}
+        </Card>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-              Business type
-              <select
-                value={businessType}
-                onChange={(e) => setBusinessType(e.target.value)}
-                className={inputClass}
-              >
-                {BUSINESS_TYPES.map((b) => (
-                  <option key={b.value} value={b.value}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+        <div className="flex flex-col gap-4">
+          {searchMutation.isPending && (
+            <div className="flex items-center gap-2 text-sm text-fgMuted">
+              <Spinner className="h-3.5 w-3.5" /> Searching…
+            </div>
+          )}
 
-            {!businessType && (
-              <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-                Keyword
-                <input
-                  value={customKeyword}
-                  onChange={(e) => setCustomKeyword(e.target.value)}
-                  className={inputClass}
-                  placeholder="e.g. dental clinic"
-                />
-              </label>
-            )}
-
-            <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-              Country
-              <select
-                value={country}
-                onChange={(e) => {
-                  setCountry(e.target.value);
-                  setState("");
-                  setCustomState("");
-                }}
-                className={inputClass}
-              >
-                {COUNTRIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-              {country === "United States" ? "State" : "State / region"}
-              {country === "United States" ? (
-                <select value={state} onChange={(e) => setState(e.target.value)} className={inputClass}>
-                  <option value="">Any state</option>
-                  {US_STATES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  value={customState}
-                  onChange={(e) => setCustomState(e.target.value)}
-                  className={inputClass}
-                  placeholder="Optional"
-                />
+          {results && (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatCard label="Companies created" value={results.companies_created} />
+                <StatCard label="Companies matched" value={results.companies_matched} />
+                <StatCard label="Contacts created" value={results.contacts_created} />
+                <StatCard label="Contacts matched" value={results.contacts_matched} />
+              </div>
+              {results.batch_id && (
+                <Link href={`/leads/batches/${results.batch_id}`} className="self-start">
+                  <Button variant="outline" size="sm">
+                    View in Leads
+                  </Button>
+                </Link>
               )}
-            </label>
 
-            <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-              City
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className={inputClass}
-                placeholder="e.g. Austin"
-              />
-            </label>
+              {results.companies.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold text-fgMuted">Companies (found via these contacts)</h3>
+                  <Card className="flex flex-col divide-y divide-border p-0">
+                    {results.companies.map((company) => (
+                      <Link
+                        key={company.id}
+                        href={`/companies/${company.id}`}
+                        className="flex items-center justify-between px-4 py-3 hover:bg-surface2"
+                      >
+                        <span className="text-base font-medium text-fg">{company.name ?? "Unnamed company"}</span>
+                        <span className="text-sm text-fgMuted">{company.domain ?? company.city ?? "—"}</span>
+                      </Link>
+                    ))}
+                  </Card>
+                </div>
+              )}
 
-            <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-              Result limit
-              <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className={inputClass}>
-                {RESULT_LIMITS.map((n) => (
-                  <option key={n} value={n}>
-                    {n} results
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+              {results.contacts.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold text-fgMuted">
+                    Contacts
+                    {selectedProvider === "apollo" && (
+                      <span className="ml-2 font-normal text-fgSubtle">
+                        — emails are hidden until revealed (spends an Apollo credit)
+                      </span>
+                    )}
+                  </h3>
+                  <Card className="flex flex-col divide-y divide-border p-0">
+                    {results.contacts.map((contact) => (
+                      <ContactResultRow
+                        key={contact.id}
+                        contact={contact}
+                        workspaceId={workspaceId!}
+                        provider={selectedProvider}
+                      />
+                    ))}
+                  </Card>
+                </div>
+              )}
 
-          <div>
-            <Button type="submit" disabled={!selectedProvider || searchMutation.isPending}>
-              {searchMutation.isPending ? <Spinner className="h-3.5 w-3.5" /> : "Run search"}
-            </Button>
-          </div>
-        </form>
-
-        {searchMutation.isError && (
-          <p className="text-[12.5px] text-danger">
-            {(searchMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-              "Search failed — the provider may be unavailable."}
-          </p>
-        )}
-      </Card>
-
-      {searchMutation.isSuccess && (
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-wrap gap-4 text-[13px] text-fgMuted">
-            <span>
-              <strong className="font-mono text-fg">{searchMutation.data.companies_created}</strong> companies created
-            </span>
-            <span>
-              <strong className="font-mono text-fg">{searchMutation.data.companies_matched}</strong> companies matched
-            </span>
-            <span>
-              <strong className="font-mono text-fg">{searchMutation.data.contacts_created}</strong> contacts created
-            </span>
-            <span>
-              <strong className="font-mono text-fg">{searchMutation.data.contacts_matched}</strong> contacts matched
-            </span>
-          </div>
-
-          {searchMutation.data.companies.length > 0 && (
-            <Card className="flex flex-col divide-y divide-border p-0">
-              {searchMutation.data.companies.map((company) => (
-                <Link
-                  key={company.id}
-                  href={`/companies/${company.id}`}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-surface2"
-                >
-                  <span className="text-[13px] font-medium text-fg">{company.name ?? "Unnamed company"}</span>
-                  <span className="text-[12px] text-fgMuted">{company.domain ?? company.city ?? "—"}</span>
-                </Link>
-              ))}
-            </Card>
-          )}
-
-          {searchMutation.data.contacts.length > 0 && (
-            <Card className="flex flex-col divide-y divide-border p-0">
-              {searchMutation.data.contacts.map((contact) => (
-                <Link
-                  key={contact.id}
-                  href={`/leads/${contact.id}`}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-surface2"
-                >
-                  <span className="text-[13px] font-medium text-fg">
-                    {contact.full_name ?? contact.email ?? "Unnamed contact"}
-                  </span>
-                  <span className="text-[12px] text-fgMuted">{contact.job_title ?? contact.email ?? "—"}</span>
-                </Link>
-              ))}
-            </Card>
-          )}
-
-          {searchMutation.data.companies.length === 0 && searchMutation.data.contacts.length === 0 && (
-            <p className="text-[13px] text-fgMuted">The provider ran successfully but found nothing for these criteria.</p>
+              {!hasResults && (
+                <EmptyState title="Nothing found" description="The provider ran successfully but found nothing for these criteria." />
+              )}
+            </>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
 export default function DiscoverPage() {
   return (
-    <AppShell title="Discover">
+    <AppShell
+      title="Discover"
+      description="Find real leads with Apollo or Smartlead — AI prompt or manual filters."
+      fullWidth
+    >
       <DiscoverContent />
     </AppShell>
   );

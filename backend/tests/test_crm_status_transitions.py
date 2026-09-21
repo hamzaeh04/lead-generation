@@ -1,21 +1,15 @@
 """Verifies the automatic CRM status transitions wired into existing
-services (verification -> VERIFIED, campaign send -> CONTACTED, webhook
-events -> OPENED/CLICKED/REPLIED/BOUNCED/UNSUBSCRIBED)."""
+services (campaign send -> CONTACTED, webhook events ->
+OPENED/CLICKED/REPLIED/BOUNCED/UNSUBSCRIBED)."""
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 
 from app.models.company import Company
 from app.models.contact import Contact
 from app.models.provider_config import ProviderConfig
-from app.providers.base import ProviderCategory, ProviderMetadata
+from app.providers.base import ProviderCategory
 from app.providers.email_senders.base import OutboundEmail, SendResult, SendStatus
-from app.providers.email_verifiers.base import (
-    EmailVerifierProvider,
-    VerificationResult,
-    VerificationStatus,
-)
 
 pytestmark = pytest.mark.asyncio
 
@@ -44,73 +38,6 @@ async def _make_contact(db_session, workspace_id, *, email="jordan@acmedental.ex
     await db_session.commit()
     await db_session.refresh(contact)
     return contact
-
-
-class _ValidVerifier(EmailVerifierProvider):
-    name = "stub"
-    category = ProviderCategory.EMAIL_VERIFIER
-
-    async def verify(self, email):
-        return VerificationResult(
-            status=VerificationStatus.VALID,
-            metadata=ProviderMetadata(provider="stub", retrieved_at=datetime.now(timezone.utc)),
-            score=95,
-        )
-
-
-async def test_valid_verification_bumps_new_to_verified(client, db_session, unique_email, monkeypatch):
-    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-    contact = await _make_contact(db_session, workspace_id)
-
-    db_session.add(
-        ProviderConfig(provider="stub", category=ProviderCategory.EMAIL_VERIFIER, enabled=True, priority=1)
-    )
-    await db_session.commit()
-    monkeypatch.setattr(
-        "app.services.email_verification_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _ValidVerifier(),
-    )
-
-    await client.post(
-        f"/api/v1/leads/{contact.id}/verify", params={"workspace_id": workspace_id}, headers=headers
-    )
-
-    lead_response = await client.get(
-        f"/api/v1/leads/{contact.id}", params={"workspace_id": workspace_id}, headers=headers
-    )
-    assert lead_response.json()["status"] == "verified"
-
-
-async def test_valid_verification_does_not_downgrade_further_along_status(
-    client, db_session, unique_email, monkeypatch
-):
-    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-    contact = await _make_contact(db_session, workspace_id)
-
-    await client.patch(
-        f"/api/v1/leads/{contact.id}/status",
-        params={"workspace_id": workspace_id},
-        json={"status": "meeting"},
-        headers=headers,
-    )
-
-    db_session.add(
-        ProviderConfig(provider="stub", category=ProviderCategory.EMAIL_VERIFIER, enabled=True, priority=1)
-    )
-    await db_session.commit()
-    monkeypatch.setattr(
-        "app.services.email_verification_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _ValidVerifier(),
-    )
-
-    await client.post(
-        f"/api/v1/leads/{contact.id}/verify", params={"workspace_id": workspace_id}, headers=headers
-    )
-
-    lead_response = await client.get(
-        f"/api/v1/leads/{contact.id}", params={"workspace_id": workspace_id}, headers=headers
-    )
-    assert lead_response.json()["status"] == "meeting"  # not downgraded to "verified"
 
 
 class _StubSender:

@@ -2,17 +2,15 @@
 discovery call -> normalization/dedup (via the Phase 2 resolvers) -> persist.
 
 This is a single explicit provider call (the caller picks exactly one
-enabled provider and category) — not the cross-category named waterfall
-strategies described in section 51 ("B2B: Apollo → PDL → Hunter → ...").
-Same-category multi-provider waterfall fallback exists for email discovery/
-verification (see EmailDiscoveryService/EmailVerificationService); search
-keeps explicit provider selection since the NL-search UI flow (section 60)
-has the user choose providers as a distinct step. Every call is logged via
-ProviderUsageRecorder for cost tracking and provider health (Phase 6).
+enabled provider and category), not a cross-provider waterfall — the
+NL-search UI flow (section 60) has the user choose a provider as a
+distinct step. Every call is logged via ProviderUsageRecorder for cost
+tracking and provider health (Phase 6).
 """
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -29,15 +27,10 @@ from app.providers.base import (
     ProviderCategory,
     ProviderUnavailableError,
 )
-from app.providers.lead_sources.apify_provider import (
-    ApifyClient,
-    ApifyCompanyDiscoveryProvider,
-    ApifyLocalBusinessDiscoveryProvider,
-)
-from app.repositories.actor_config_repository import ActorConfigRepository
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.contact_repository import ContactRepository
 from app.repositories.provider_config_repository import ProviderConfigRepository
+from app.repositories.search_batch_repository import SearchBatchRepository
 from app.services import provider_factory
 from app.services.company_resolver import CompanyEntityResolver
 from app.services.contact_resolver import PersonEntityResolver
@@ -49,7 +42,6 @@ logger = get_logger(__name__)
 _DISCOVERY_CATEGORIES = {
     ProviderCategory.COMPANY_DISCOVERY,
     ProviderCategory.PERSON_DISCOVERY,
-    ProviderCategory.LOCAL_BUSINESS_DISCOVERY,
 }
 
 
@@ -58,9 +50,9 @@ class SearchService:
         self.session = session
         self.settings = settings
         self.provider_configs = ProviderConfigRepository(session)
-        self.actor_configs = ActorConfigRepository(session)
         self.company_resolver = CompanyEntityResolver(CompanyRepository(session))
         self.contact_resolver = PersonEntityResolver(ContactRepository(session))
+        self.search_batches = SearchBatchRepository(session)
 
     async def execute(
         self,
@@ -69,6 +61,7 @@ class SearchService:
         provider_name: str,
         category: ProviderCategory,
         criteria: DiscoveryCriteria,
+        created_by: uuid.UUID | None = None,
     ) -> dict:
         if category not in _DISCOVERY_CATEGORIES:
             raise HTTPException(
@@ -88,22 +81,18 @@ class SearchService:
                 ),
             )
 
-        if provider_name == "apify":
-            provider = await self._build_apify_provider(category)
-        else:
-            provider = provider_factory.build_provider(provider_name, category, self.settings)
-            if provider is None:
-                env_var = provider_factory.required_env_var(provider_name, category)
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Provider '{provider_name}' credentials not configured (set {env_var}).",
-                )
+        provider = provider_factory.build_provider(provider_name, category, self.settings)
+        if provider is None:
+            env_var = provider_factory.required_env_var(provider_name, category)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Provider '{provider_name}' credentials not configured (set {env_var}).",
+            )
 
         contacts_found: list[NormalizedContact] = []
         companies_found: list[NormalizedCompany] = []
         operation = {
             ProviderCategory.COMPANY_DISCOVERY: "discover_companies",
-            ProviderCategory.LOCAL_BUSINESS_DISCOVERY: "discover_local_businesses",
             ProviderCategory.PERSON_DISCOVERY: "discover_people",
         }[category]
 
@@ -117,8 +106,6 @@ class SearchService:
             try:
                 if category == ProviderCategory.COMPANY_DISCOVERY:
                     companies_found = await provider.discover_companies(criteria)
-                elif category == ProviderCategory.LOCAL_BUSINESS_DISCOVERY:
-                    companies_found = await provider.discover_local_businesses(criteria)
                 else:  # PERSON_DISCOVERY
                     contacts_found = await provider.discover_people(criteria)
             except ProviderUnavailableError as exc:
@@ -145,6 +132,7 @@ class SearchService:
 
         contacts_created = contacts_matched = 0
         touched_contacts: dict[uuid.UUID, Contact] = {}
+        contact_is_new: dict[uuid.UUID, bool] = {}
 
         for contact_candidate in contacts_found:
             company_id = await self._resolve_company_for_contact(workspace_id, contact_candidate)
@@ -152,12 +140,33 @@ class SearchService:
                 workspace_id=workspace_id, candidate=contact_candidate, company_id=company_id
             )
             touched_contacts[resolution.contact.id] = resolution.contact
+            contact_is_new[resolution.contact.id] = resolution.created
             if resolution.created:
                 contacts_created += 1
             else:
                 contacts_matched += 1
 
+        batch = None
+        if touched_companies or touched_contacts:
+            batch = await self.search_batches.create(
+                workspace_id=workspace_id,
+                provider=provider_name,
+                category=category,
+                criteria_snapshot=asdict(criteria),
+                created_by=created_by,
+            )
+            batch.companies_created = companies_created
+            batch.companies_matched = companies_matched
+            batch.contacts_created = contacts_created
+            batch.contacts_matched = contacts_matched
+            for contact_id in touched_contacts:
+                self.search_batches.add_contact(
+                    batch=batch, contact_id=contact_id, is_new=contact_is_new[contact_id]
+                )
+
         await self.session.commit()
+        if batch is not None:
+            await self.session.refresh(batch)
         # Matched (not newly-created) records were mutated in-place, and
         # onupdate=func.now() columns are expired after commit — refresh
         # before returning them for (sync) Pydantic serialization.
@@ -180,6 +189,7 @@ class SearchService:
             "search_executed",
             provider=provider_name,
             category=str(category),
+            batch_id=str(batch.id) if batch is not None else None,
             companies_created=companies_created,
             companies_matched=companies_matched,
             contacts_created=contacts_created,
@@ -187,6 +197,7 @@ class SearchService:
         )
 
         return {
+            "batch_id": batch.id if batch is not None else None,
             "companies_created": companies_created,
             "companies_matched": companies_matched,
             "contacts_created": contacts_created,
@@ -194,34 +205,6 @@ class SearchService:
             "companies": list(touched_companies.values()),
             "contacts": list(touched_contacts.values()),
         }
-
-    async def _build_apify_provider(self, category: ProviderCategory):
-        if category not in (ProviderCategory.COMPANY_DISCOVERY, ProviderCategory.LOCAL_BUSINESS_DISCOVERY):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Apify does not support category '{category}' for discovery search",
-            )
-
-        actor_config = await self.actor_configs.get_best_for_category(category)
-        if actor_config is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"No enabled Apify actor configured for category '{category}'. "
-                    "An admin must register one via POST /api/v1/apify/actors."
-                ),
-            )
-
-        if not self.settings.APIFY_API_TOKEN:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Provider 'apify' credentials not configured (set APIFY_API_TOKEN).",
-            )
-
-        client = ApifyClient(api_token=self.settings.APIFY_API_TOKEN)
-        if category == ProviderCategory.COMPANY_DISCOVERY:
-            return ApifyCompanyDiscoveryProvider(actor_config=actor_config, client=client)
-        return ApifyLocalBusinessDiscoveryProvider(actor_config=actor_config, client=client)
 
     async def _resolve_company_for_contact(
         self, workspace_id: uuid.UUID, contact: NormalizedContact

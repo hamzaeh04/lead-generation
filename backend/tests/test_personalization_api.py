@@ -10,7 +10,7 @@ from app.models.intent_signal import IntentSignal
 from app.models.provider_config import ProviderConfig
 from app.providers.ai.base import AIGenerationRequest, AIGenerationResult
 from app.providers.base import ProviderCategory, ProviderUnavailableError
-from app.providers.intent.base import IntentSignalType
+from app.models.intent_signal import IntentSignalType
 
 pytestmark = pytest.mark.asyncio
 

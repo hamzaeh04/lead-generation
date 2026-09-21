@@ -1,8 +1,18 @@
-"""Apollo.io people search (person discovery / decision-maker lookup).
+"""Apollo.io people search (person discovery) + reveal (enrichment).
 
-Same caveat as `lead_sources/apollo_provider.py`: built from documented
-Apollo API conventions, not verified against a live account in this
-environment. Verify field mappings once a real APOLLO_API_KEY is in use.
+Verified against Apollo's current docs (docs.apollo.io/reference/people-api-search
+and .../people-enrichment) in September 2026 — the older `mixed_people/search`
+endpoint this file used to call is deprecated/plan-restricted; the current
+prospecting endpoint is `mixed_people/api_search`.
+
+Two-step flow, matching Apollo's own product UX:
+  1. `discover_people` (this file) — free (0 credits), but the response is
+     masked: no email, and even the last name comes back obfuscated
+     (e.g. "Sm***h"). We never store that obfuscated value or a fabricated
+     placeholder — `last_name`/`email`/`phone` stay None until revealed.
+  2. `reveal` (this file) — costs Apollo credits per person, called
+     on-demand later (see app/api/v1/leads.py's /reveal endpoint), not
+     automatically for every search result.
 
 Requires APOLLO_API_KEY.
 """
@@ -22,6 +32,19 @@ from app.providers.people_sources.base import PersonDiscoveryProvider
 
 _BASE_URL = "https://api.apollo.io"
 
+# extra_filters keys passed straight through to Apollo's advanced params —
+# left out of DiscoveryCriteria's named fields since they're Apollo-specific
+# and the orchestrator's contract is "providers ignore filters they don't
+# support," not "every provider gets a first-class field." Friendly names
+# here (not Apollo's raw param names) so the AI prompt-parsing service can
+# target one human-readable vocabulary across providers; translated to
+# Apollo's actual API param names in _search_body.
+_FRIENDLY_TO_APOLLO_PARAM = {
+    "email_status": "contact_email_status",  # list[str]: verified/unverified/likely to engage/unavailable
+    "technologies": "currently_using_any_of_technology_uids",  # list[str]
+    "organization_locations": "organization_locations",  # list[str] — company HQ, distinct from person_locations
+}
+
 
 class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
     name = "apollo"
@@ -37,10 +60,17 @@ class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
         )
 
     async def discover_people(self, criteria: DiscoveryCriteria) -> list[NormalizedContact]:
-        body = self._base_body(criteria)
-        payload = await self._search(body)
+        body = self._search_body(criteria)
+        payload = await request_json(
+            self._client,
+            "POST",
+            "/api/v1/mixed_people/api_search",
+            provider=self.name,
+            headers={"x-api-key": self._api_key},
+            json=body,
+        )
         people = payload.get("people") or []
-        return [self._to_contact(p) for p in people[: criteria.limit]]
+        return [self._to_masked_contact(p) for p in people[: criteria.limit]]
 
     async def discover_decision_makers(
         self, company_domain: str, target_titles: list[str]
@@ -48,28 +78,59 @@ class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
         body: dict = {
             "page": 1,
             "per_page": 25,
-            "q_organization_domains": [company_domain],
+            "q_organization_domains_list": [company_domain],
         }
         if target_titles:
             body["person_titles"] = target_titles
-        payload = await self._search(body)
-        people = payload.get("people") or []
-        return [self._to_contact(p) for p in people]
-
-    async def _search(self, body: dict) -> dict:
-        return await request_json(
+        payload = await request_json(
             self._client,
             "POST",
-            "/v1/mixed_people/search",
+            "/api/v1/mixed_people/api_search",
             provider=self.name,
             headers={"x-api-key": self._api_key},
             json=body,
         )
+        people = payload.get("people") or []
+        return [self._to_masked_contact(p) for p in people]
 
-    def _base_body(self, criteria: DiscoveryCriteria) -> dict:
+    async def reveal(self, person_id: str) -> dict | None:
+        """Enriches one masked search result into real contact details.
+
+        Returns None (never an error) when Apollo has nothing to reveal —
+        an empty match is a normal outcome, not a failure, same convention
+        as every other "nothing found" path in this codebase.
+        """
+        payload = await request_json(
+            self._client,
+            "POST",
+            "/api/v1/people/match",
+            provider=self.name,
+            headers={"x-api-key": self._api_key},
+            json={"id": person_id},
+        )
+        person = payload.get("person")
+        if not person:
+            return None
+        email = self._real_email_or_none(person.get("email"))
+        phone = self._first_phone_number(person)
+        first_name = person.get("first_name")
+        last_name = person.get("last_name")
+        if not email and not phone and not last_name:
+            # Apollo matched the id but revealed nothing new — treat the
+            # same as no match rather than "successfully revealed nothing."
+            return None
+        return {
+            "first_name": first_name,
+            "last_name": last_name,
+            "full_name": person.get("name") or " ".join(p for p in (first_name, last_name) if p) or None,
+            "email": email,
+            "phone": phone,
+        }
+
+    def _search_body(self, criteria: DiscoveryCriteria) -> dict:
         body: dict = {"page": 1, "per_page": min(criteria.limit, 100)}
         if criteria.domain:
-            body["q_organization_domains"] = [criteria.domain]
+            body["q_organization_domains_list"] = [criteria.domain]
         if criteria.job_titles:
             body["person_titles"] = criteria.job_titles
         if criteria.seniorities:
@@ -79,28 +140,40 @@ class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
         locations = [p for p in (criteria.city, criteria.state, criteria.country) if p]
         if locations:
             body["person_locations"] = [", ".join(locations)]
+        if criteria.employee_count_min is not None or criteria.employee_count_max is not None:
+            lo = criteria.employee_count_min if criteria.employee_count_min is not None else 0
+            hi = criteria.employee_count_max if criteria.employee_count_max is not None else 1000000
+            body["organization_num_employees_ranges"] = [f"{lo},{hi}"]
+        for friendly_key, apollo_param in _FRIENDLY_TO_APOLLO_PARAM.items():
+            value = criteria.extra_filters.get(friendly_key)
+            if value is not None:
+                body[apollo_param] = value
+        revenue_min = criteria.extra_filters.get("revenue_min")
+        revenue_max = criteria.extra_filters.get("revenue_max")
+        if revenue_min is not None or revenue_max is not None:
+            body["revenue_range"] = {
+                k: v for k, v in {"min": revenue_min, "max": revenue_max}.items() if v is not None
+            }
         return body
 
-    def _to_contact(self, person: dict) -> NormalizedContact:
+    def _to_masked_contact(self, person: dict) -> NormalizedContact:
         org = person.get("organization") or {}
+        first_name = person.get("first_name")
         return NormalizedContact(
-            email=self._real_email_or_none(person.get("email")),
-            phone=self._first_phone_number(person),
             metadata=ProviderMetadata(
                 provider=self.name,
                 external_id=person.get("id"),
-                source_url=person.get("linkedin_url"),
                 source_type="api",
                 raw_reference=person,
             ),
-            first_name=person.get("first_name"),
-            last_name=person.get("last_name"),
-            full_name=person.get("name"),
+            first_name=first_name,
+            last_name=None,  # Apollo only returns last_name_obfuscated pre-reveal — never store that
+            full_name=first_name,
             job_title=person.get("title"),
             seniority=person.get("seniority"),
-            linkedin_url=person.get("linkedin_url"),
             company_name=org.get("name"),
             company_domain=org.get("primary_domain"),
+            # email/phone/linkedin intentionally left None — masked until reveal()
         )
 
     @staticmethod

@@ -20,11 +20,9 @@ from app.models.campaign_recipient import CampaignRecipient
 from app.models.company import Company, CompanySource
 from app.models.contact import Contact, LeadStatus
 from app.models.email_event import EmailEvent, EmailEventType
-from app.models.email_verification import EmailVerification
 from app.models.icp_profile import ICPProfile
 from app.models.intent_signal import IntentSignal
 from app.models.provider_usage import ProviderUsage
-from app.providers.email_verifiers.base import VerificationStatus
 from app.schemas.analytics import AnalyticsOverview, CampaignSummary, SourceCount
 from app.services.icp_score_service import compute_icp_score
 from app.services.intent_score_service import compute_intent_score
@@ -106,27 +104,13 @@ class AnalyticsService:
         )
 
     async def _count_verified(self, workspace_id: uuid.UUID) -> int:
-        # Latest verification per contact, counted only if VALID.
-        latest_ids_subquery = (
-            select(
-                EmailVerification.contact_id,
-                func.max(EmailVerification.verified_at).label("latest_at"),
+        # No email-verification provider is wired up; "verified" now just
+        # means the contact has an email on file at all.
+        return await self._count(
+            select(func.count()).select_from(Contact).where(
+                Contact.workspace_id == workspace_id, Contact.email.is_not(None)
             )
-            .where(EmailVerification.workspace_id == workspace_id)
-            .group_by(EmailVerification.contact_id)
-            .subquery()
         )
-        result = await self.session.execute(
-            select(func.count())
-            .select_from(EmailVerification)
-            .join(
-                latest_ids_subquery,
-                (EmailVerification.contact_id == latest_ids_subquery.c.contact_id)
-                & (EmailVerification.verified_at == latest_ids_subquery.c.latest_at),
-            )
-            .where(EmailVerification.verification_status == VerificationStatus.VALID)
-        )
-        return result.scalar_one()
 
     async def _count_high_intent(self, workspace_id: uuid.UUID, companies: list[Company]) -> int:
         count = 0

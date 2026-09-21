@@ -13,6 +13,14 @@ class CampaignStepCreate(BaseModel):
     active: bool = True
 
 
+class CampaignStepUpdate(BaseModel):
+    step_number: int | None = Field(default=None, ge=1)
+    delay_days: int | None = Field(default=None, ge=0)
+    subject: str | None = None
+    body: str | None = None
+    active: bool | None = None
+
+
 class CampaignStepRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

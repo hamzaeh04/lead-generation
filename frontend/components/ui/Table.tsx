@@ -18,8 +18,12 @@ export function TableHead({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function Th({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <th className={cn("px-4 py-2.5 text-left font-semibold", className)}>{children}</th>;
+export function Th({ children, className, style }: React.ThHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <th className={cn("px-4 py-2.5 text-left font-semibold", className)} style={style}>
+      {children}
+    </th>
+  );
 }
 
 export function TableBody({ children }: { children: React.ReactNode }) {
@@ -42,5 +46,5 @@ export function Tr({
 }
 
 export function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <td className={cn("px-4 py-3 align-middle text-fg", className)}>{children}</td>;
+  return <td className={cn("whitespace-nowrap px-4 py-3 align-middle text-fg", className)}>{children}</td>;
 }

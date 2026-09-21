@@ -5,13 +5,10 @@ import pytest
 
 from app.models.company import Company, CompanySource
 from app.models.contact import Contact, LeadStatus
-from app.models.email_verification import EmailVerification
-from app.models.intent_signal import IntentSignal
+from app.models.intent_signal import IntentSignal, IntentSignalType
 from app.models.provider_config import ProviderConfig
 from app.providers.base import ProviderCategory, ProviderMetadata
 from app.providers.email_senders.base import OutboundEmail, SendResult, SendStatus
-from app.providers.email_verifiers.base import VerificationStatus
-from app.providers.intent.base import IntentSignalType
 
 pytestmark = pytest.mark.asyncio
 
@@ -36,7 +33,7 @@ async def test_analytics_overview_counts_companies_and_contacts(client, db_sessi
     company = Company(workspace_id=uuid.UUID(workspace_id), name="Acme Dental Group")
     db_session.add(company)
     await db_session.flush()
-    db_session.add(CompanySource(company_id=company.id, provider="serpapi", source_type="api"))
+    db_session.add(CompanySource(company_id=company.id, provider="apollo", source_type="api"))
     contact = Contact(workspace_id=uuid.UUID(workspace_id), company_id=company.id, email="jordan@acmedental.example")
     db_session.add(contact)
     await db_session.commit()
@@ -50,37 +47,8 @@ async def test_analytics_overview_counts_companies_and_contacts(client, db_sessi
     assert body["total_companies"] == 1
     assert body["total_contacts"] == 1
     assert body["positive_reply_rate"] is None  # never fabricated — no sentiment classification exists
-    assert body["top_sources"] == [{"provider": "serpapi", "count": 1}]
-
-
-async def test_analytics_overview_counts_verified_emails_from_latest_verification(
-    client, db_session, unique_email
-):
-    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-    contact = Contact(workspace_id=uuid.UUID(workspace_id), email="jordan@acmedental.example")
-    db_session.add(contact)
-    await db_session.flush()
-    # Older INVALID, then a newer VALID — only the latest should count.
-    db_session.add(
-        EmailVerification(
-            workspace_id=uuid.UUID(workspace_id), contact_id=contact.id, email=contact.email,
-            provider="hunter", verification_status=VerificationStatus.INVALID,
-            verified_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        )
-    )
-    db_session.add(
-        EmailVerification(
-            workspace_id=uuid.UUID(workspace_id), contact_id=contact.id, email=contact.email,
-            provider="hunter", verification_status=VerificationStatus.VALID,
-            verified_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
-        )
-    )
-    await db_session.commit()
-
-    response = await client.get(
-        "/api/v1/analytics/overview", params={"workspace_id": workspace_id}, headers=headers
-    )
-    assert response.json()["verified_emails"] == 1
+    assert body["top_sources"] == [{"provider": "apollo", "count": 1}]
+    assert body["verified_emails"] == 1  # no verification provider wired up — counts contacts with an email
 
 
 async def test_analytics_overview_counts_high_intent_companies(client, db_session, unique_email):

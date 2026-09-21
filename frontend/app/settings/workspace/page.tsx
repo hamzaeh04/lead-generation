@@ -2,11 +2,33 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { SettingsNav } from "@/components/SettingsNav";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/AlertDialog";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Field } from "@/components/ui/Label";
+import { Input } from "@/components/ui/Input";
 import { Pill } from "@/components/ui/Pill";
-import { Spinner } from "@/components/ui/Spinner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   addWorkspaceMember,
   listWorkspaceMembers,
@@ -16,10 +38,8 @@ import {
   type WorkspacePlan,
   type WorkspaceRole,
 } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace-context";
-
-const inputClass =
-  "rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-fg placeholder:text-fgMuted focus:border-accent focus:outline-none";
 
 const roleOptions: WorkspaceRole[] = ["owner", "admin", "member", "viewer"];
 const planOptions: WorkspacePlan[] = ["free", "starter", "professional", "agency", "enterprise"];
@@ -51,12 +71,20 @@ function WorkspaceSettingsContent() {
 
   const planMutation = useMutation({
     mutationFn: (plan: WorkspacePlan) => updateWorkspace(workspaceId!, { plan }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      toast.success("Plan updated");
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
   });
 
   const limitsMutation = useMutation({
     mutationFn: (max: number) => updateWorkspace(workspaceId!, { limits: { max_team_members: max } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      toast.success("Limits updated");
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
   });
 
   const addMemberMutation = useMutation({
@@ -64,78 +92,85 @@ function WorkspaceSettingsContent() {
     onSuccess: () => {
       setMemberEmail("");
       queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] });
+      toast.success("Member added");
     },
+    onError: (error) => toast.error(getErrorMessage(error, "Could not add member — they must already have a registered account.")),
   });
 
   const roleMutation = useMutation({
     mutationFn: ({ memberId, role }: { memberId: string; role: WorkspaceRole }) =>
       updateWorkspaceMemberRole(workspaceId!, memberId, role),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] }),
+    onError: (error) => toast.error(getErrorMessage(error)),
   });
 
   const removeMutation = useMutation({
     mutationFn: (memberId: string) => removeWorkspaceMember(workspaceId!, memberId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] });
+      toast.success("Member removed");
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
   });
 
   if (!activeWorkspace || !workspaceId) {
-    return <Spinner />;
+    return <Skeleton className="h-40 w-full" />;
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">Workspace settings</h1>
-        <p className="mt-1 text-[13px] text-fgMuted">{activeWorkspace.name}</p>
-      </div>
+      <SettingsNav />
 
       <Card className="flex flex-col gap-4">
-        <h2 className="text-[13px] font-semibold text-fg">Plan &amp; limits</h2>
+        <h2 className="text-base font-semibold text-fg">Plan &amp; limits</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-            Plan
-            <select
+          <Field label="Plan">
+            <Select
               value={activeWorkspace.plan}
               disabled={!isOwner || planMutation.isPending}
-              onChange={(e) => planMutation.mutate(e.target.value as WorkspacePlan)}
-              className={`${inputClass} disabled:opacity-50`}
+              onValueChange={(v) => planMutation.mutate(v as WorkspacePlan)}
             >
-              {planOptions.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1.5 text-[12.5px] text-fgMuted">
-            Max team members (blank = unlimited)
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {planOptions.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Max team members" hint="Blank = unlimited">
             <div className="flex gap-2">
-              <input
+              <Input
                 type="number"
                 min={1}
                 disabled={!isOwner}
                 placeholder={String(activeWorkspace.limits.max_team_members ?? "unlimited")}
                 value={maxTeamMembers}
                 onChange={(e) => setMaxTeamMembers(e.target.value)}
-                className={`${inputClass} flex-1 disabled:opacity-50`}
+                className="flex-1"
               />
               {isOwner && (
                 <Button
                   variant="ghost"
-                  disabled={!maxTeamMembers || limitsMutation.isPending}
+                  disabled={!maxTeamMembers}
+                  loading={limitsMutation.isPending}
                   onClick={() => limitsMutation.mutate(Number(maxTeamMembers))}
                 >
                   Save
                 </Button>
               )}
             </div>
-          </label>
+          </Field>
         </div>
-        {!isOwner && <p className="text-[12px] text-fgMuted">Only the workspace owner can change plan or limits.</p>}
+        {!isOwner && <p className="text-sm text-fgMuted">Only the workspace owner can change plan or limits.</p>}
       </Card>
 
       <Card className="flex flex-col gap-4">
-        <h2 className="text-[13px] font-semibold text-fg">Members</h2>
+        <h2 className="text-base font-semibold text-fg">Members</h2>
 
         {isAdminOrOwner && (
           <form
@@ -145,36 +180,32 @@ function WorkspaceSettingsContent() {
               if (memberEmail.trim()) addMemberMutation.mutate();
             }}
           >
-            <input
+            <Input
               type="email"
               required
               value={memberEmail}
               onChange={(e) => setMemberEmail(e.target.value)}
               placeholder="Existing user's email"
-              className={`${inputClass} flex-1`}
+              className="flex-1"
             />
-            <select
-              value={memberRole}
-              onChange={(e) => setMemberRole(e.target.value as WorkspaceRole)}
-              className={inputClass}
-            >
-              {roleOptions
-                .filter((r) => r !== "owner")
-                .map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-            </select>
-            <Button type="submit" disabled={addMemberMutation.isPending}>
-              {addMemberMutation.isPending ? <Spinner className="h-3.5 w-3.5" /> : "Add"}
+            <Select value={memberRole} onValueChange={(v) => setMemberRole(v as WorkspaceRole)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {roleOptions
+                  .filter((r) => r !== "owner")
+                  .map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Button type="submit" loading={addMemberMutation.isPending}>
+              Add
             </Button>
           </form>
-        )}
-        {addMemberMutation.isError && (
-          <p className="text-[12.5px] text-danger">
-            Could not add member — they must already have a registered account.
-          </p>
         )}
 
         <div className="flex flex-col divide-y divide-border">
@@ -183,28 +214,48 @@ function WorkspaceSettingsContent() {
               member.role === "owner" && membersQuery.data!.filter((m) => m.role === "owner").length === 1;
             return (
               <div key={member.id} className="flex items-center justify-between gap-3 py-3 first:pt-0">
-                <span className="text-[13px] text-fg">{member.email ?? member.user_id}</span>
+                <span className="text-base text-fg">{member.email ?? member.user_id}</span>
                 <div className="flex items-center gap-2">
                   {isOwner ? (
-                    <select
+                    <Select
                       value={member.role}
                       disabled={isOnlyOwner || roleMutation.isPending}
-                      onChange={(e) => roleMutation.mutate({ memberId: member.id, role: e.target.value as WorkspaceRole })}
-                      className={`${inputClass} py-1 text-[12px] disabled:opacity-50`}
+                      onValueChange={(v) => roleMutation.mutate({ memberId: member.id, role: v as WorkspaceRole })}
                     >
-                      {roleOptions.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="h-8 w-[110px] text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roleOptions.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {r}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   ) : (
                     <Pill tone={roleTone[member.role]}>{member.role}</Pill>
                   )}
                   {isAdminOrOwner && !isOnlyOwner && (
-                    <Button variant="ghost" onClick={() => removeMutation.mutate(member.id)} disabled={removeMutation.isPending}>
-                      Remove
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          Remove
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Remove this member?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {member.email ?? "This member"} will lose access to this workspace immediately.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Keep member</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => removeMutation.mutate(member.id)}>Remove</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   )}
                 </div>
               </div>
@@ -218,7 +269,7 @@ function WorkspaceSettingsContent() {
 
 export default function WorkspaceSettingsPage() {
   return (
-    <AppShell title="Workspace settings">
+    <AppShell title="Settings">
       <WorkspaceSettingsContent />
     </AppShell>
   );

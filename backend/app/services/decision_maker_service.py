@@ -9,10 +9,11 @@ vs. all-providers-attempted-and-found-nothing are distinguished, and a
 provider returning zero results is not an error — the next provider in
 priority order is still tried, since coverage genuinely varies by source.
 
-A company with no domain can't be searched: Apollo/PDL's decision-maker
-lookup queries by organization domain, not by name — a name-only search
-would be far noisier and risks attributing a person to the wrong company
-of the same name.
+A company with no domain can't be searched: Apollo's decision-maker lookup
+queries by organization domain, not by name — a name-only search would be
+far noisier and risks attributing a person to the wrong company of the
+same name. (Smartlead has no domain-based lookup at all — it always
+raises ProviderUnavailableError here and is silently skipped.)
 """
 from __future__ import annotations
 

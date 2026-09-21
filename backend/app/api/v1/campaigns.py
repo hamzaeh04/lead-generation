@@ -20,6 +20,7 @@ from app.schemas.campaign import (
     CampaignReport,
     CampaignStepCreate,
     CampaignStepRead,
+    CampaignStepUpdate,
     EnrollRequest,
     EnrollResponse,
     PreviewRequest,
@@ -104,6 +105,63 @@ async def add_campaign_step(
     await session.commit()
     await session.refresh(step)
     return step
+
+
+@router.patch("/{campaign_id}/steps/{step_id}", response_model=CampaignStepRead)
+async def update_campaign_step(
+    campaign_id: uuid.UUID,
+    step_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    payload: CampaignStepUpdate,
+    _membership=Depends(require_workspace_editor),
+    session: AsyncSession = Depends(get_db_session),
+):
+    repo = CampaignRepository(session)
+    campaign = await repo.get_by_id(workspace_id, campaign_id)
+    if campaign is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Campaign not found")
+
+    step = await repo.get_step_by_id(campaign_id, step_id)
+    if step is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Step not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "step_number" in updates and updates["step_number"] != step.step_number:
+        existing = await repo.get_step(campaign_id, updates["step_number"])
+        if existing is not None and existing.id != step.id:
+            raise HTTPException(status.HTTP_409_CONFLICT, f"Step {updates['step_number']} already exists")
+
+    for field_name, value in updates.items():
+        setattr(step, field_name, value)
+
+    await session.commit()
+    await session.refresh(step)
+    return step
+
+
+@router.delete("/{campaign_id}/steps/{step_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_campaign_step(
+    campaign_id: uuid.UUID,
+    step_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    _membership=Depends(require_workspace_editor),
+    session: AsyncSession = Depends(get_db_session),
+):
+    repo = CampaignRepository(session)
+    campaign = await repo.get_by_id(workspace_id, campaign_id)
+    if campaign is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Campaign not found")
+
+    step = await repo.get_step_by_id(campaign_id, step_id)
+    if step is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Step not found")
+
+    await repo.delete_step(step)
+    await session.commit()
+    # expire_on_commit=False means campaign.steps (already loaded above via
+    # get_by_id's selectinload) keeps the now-deleted step in its in-memory
+    # collection — expire it so the next read re-queries from the DB.
+    session.expire(campaign, ["steps"])
 
 
 @router.post("/{campaign_id}/enroll", response_model=EnrollResponse)

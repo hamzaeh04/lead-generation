@@ -24,7 +24,7 @@ class ContactRepository:
         result = await self.session.execute(
             select(Contact)
             .where(Contact.id == contact_id, Contact.workspace_id == workspace_id)
-            .options(selectinload(Contact.company))
+            .options(selectinload(Contact.company), selectinload(Contact.sources))
         )
         return result.scalar_one_or_none()
 
@@ -144,3 +144,11 @@ class ContactRepository:
         )
         self.session.add(source)
         return source
+
+    async def get_source(self, contact_id: uuid.UUID, provider: str) -> ContactSource | None:
+        result = await self.session.execute(
+            select(ContactSource)
+            .where(ContactSource.contact_id == contact_id, ContactSource.provider == provider)
+            .order_by(ContactSource.retrieved_at.desc())
+        )
+        return result.scalars().first()

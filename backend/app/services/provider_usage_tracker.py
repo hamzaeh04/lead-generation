@@ -6,11 +6,11 @@ should go through this, not just some.
 
 Usage:
     async with ProviderUsageRecorder(
-        session, provider="hunter", category=ProviderCategory.EMAIL_FINDER,
-        operation="find_email", workspace_id=workspace_id,
+        session, provider="apollo", category=ProviderCategory.PERSON_DISCOVERY,
+        operation="discover_people", workspace_id=workspace_id,
     ) as usage:
-        result = await provider.find_email(...)
-        usage.records_returned = 1 if result else 0
+        result = await provider.discover_people(...)
+        usage.records_returned = len(result)
 
 On success, records success=True with duration measured across the block.
 On a raised exception, records success=False with the exception message,

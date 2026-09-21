@@ -73,14 +73,14 @@ async def test_provider_health_quota_remaining_null_when_no_quota_set(client, db
     headers = await _register(client, unique_email)
 
     db_session.add(
-        ProviderConfig(provider="apify", category=ProviderCategory.LOCAL_BUSINESS_DISCOVERY, enabled=True, priority=1)
+        ProviderConfig(provider="smartlead", category=ProviderCategory.PERSON_DISCOVERY, enabled=True, priority=1)
     )
     await db_session.commit()
 
     health_response = await client.get("/api/v1/providers/health", headers=headers)
     assert health_response.status_code == 200
     # No usage rows yet for this provider/category -> not present in health_summary at all
-    assert not any(r["provider"] == "apify" for r in health_response.json())
+    assert not any(r["provider"] == "smartlead" for r in health_response.json())
 
 
 async def test_update_provider_can_set_monthly_free_quota(client, db_session, unique_email):
@@ -90,7 +90,7 @@ async def test_update_provider_can_set_monthly_free_quota(client, db_session, un
 
     headers = await _register(client, unique_email)
     provider_config = ProviderConfig(
-        provider="hunter", category=ProviderCategory.EMAIL_FINDER, enabled=False, priority=1
+        provider="smartlead", category=ProviderCategory.PERSON_DISCOVERY, enabled=False, priority=1
     )
     db_session.add(provider_config)
     await db_session.commit()

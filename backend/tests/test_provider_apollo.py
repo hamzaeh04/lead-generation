@@ -1,17 +1,21 @@
+import json
+
 import httpx
 import pytest
 
-from app.providers.base import DiscoveryCriteria
+from app.providers.base import DiscoveryCriteria, ProviderUnavailableError
 from app.providers.lead_sources.apollo_provider import ApolloCompanyDiscoveryProvider
 from app.providers.people_sources.apollo_provider import ApolloPersonDiscoveryProvider
 
 pytestmark = pytest.mark.asyncio
 
 
-def _client_with(payload: dict) -> httpx.AsyncClient:
+def _client_with(payload: dict, *, on_request=None, status_code: int = 200) -> httpx.AsyncClient:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("x-api-key") == "test-key"
-        return httpx.Response(200, json=payload)
+        if on_request is not None:
+            on_request(request)
+        return httpx.Response(status_code, json=payload)
 
     return httpx.AsyncClient(base_url="https://api.apollo.io", transport=httpx.MockTransport(handler))
 
@@ -46,55 +50,163 @@ async def test_discover_companies_maps_fields():
     assert results[0].metadata.external_id == "org-1"
 
 
-async def test_discover_people_filters_locked_email_placeholder():
+async def test_discover_people_hits_current_search_endpoint():
+    captured = {}
+
+    def on_request(request):
+        captured["path"] = request.url.path
+
+    payload = {"people": []}
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with(payload, on_request=on_request))
+
+    await provider.discover_people(DiscoveryCriteria())
+
+    assert captured["path"] == "/api/v1/mixed_people/api_search"
+
+
+async def test_discover_people_request_uses_real_apollo_param_names():
+    captured = {}
+
+    def on_request(request):
+        captured["body"] = request.content
+
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with({"people": []}, on_request=on_request))
+
+    await provider.discover_people(
+        DiscoveryCriteria(
+            job_titles=["CEO", "Founder"],
+            seniorities=["c_suite", "founder"],
+            city="Austin",
+            state="TX",
+            employee_count_min=10,
+            employee_count_max=200,
+            domain="acme.example",
+            keywords="roofing",
+            extra_filters={"technologies": ["salesforce"], "email_status": ["verified"]},
+        )
+    )
+
+    body = json.loads(captured["body"])
+    assert body["person_titles"] == ["CEO", "Founder"]
+    assert body["person_seniorities"] == ["c_suite", "founder"]
+    assert body["person_locations"] == ["Austin, TX"]
+    assert body["organization_num_employees_ranges"] == ["10,200"]
+    assert body["q_organization_domains_list"] == ["acme.example"]
+    assert body["q_keywords"] == "roofing"
+    assert body["currently_using_any_of_technology_uids"] == ["salesforce"]
+    assert body["contact_email_status"] == ["verified"]
+
+
+async def test_discover_people_never_stores_email_or_obfuscated_last_name():
+    """api_search returns masked data — no email field at all, and last
+    name only as last_name_obfuscated. Neither should ever end up stored
+    as if it were real, regardless of what a (possibly stale/mocked)
+    payload contains."""
     payload = {
         "people": [
             {
                 "id": "person-1",
                 "first_name": "Jordan",
-                "last_name": "Alvarez",
-                "name": "Jordan Alvarez",
+                "last_name_obfuscated": "Al***z",
                 "title": "Owner",
-                "email": "email_not_unlocked@acmedental.example",
-                "linkedin_url": "https://linkedin.com/in/jordan-alvarez",
+                "has_email": True,
                 "organization": {"name": "Acme Dental Group", "primary_domain": "acmedental.example"},
             }
         ]
     }
     provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with(payload))
 
-    results = await provider.discover_decision_makers("acmedental.example", ["Owner"])
+    results = await provider.discover_people(DiscoveryCriteria(job_titles=["Owner"]))
 
     assert len(results) == 1
-    assert results[0].email is None  # locked placeholder must never be stored as a real email
+    assert results[0].email is None
+    assert results[0].last_name is None
+    assert results[0].full_name == "Jordan"
+    assert results[0].metadata.external_id == "person-1"
     assert results[0].job_title == "Owner"
     assert results[0].company_domain == "acmedental.example"
 
 
-async def test_discover_people_keeps_real_unlocked_email():
+async def test_reveal_maps_real_fields():
     payload = {
-        "people": [
-            {
-                "id": "person-2",
-                "first_name": "Sam",
-                "last_name": "Chen",
-                "name": "Sam Chen",
-                "title": "CEO",
-                "email": "sam@sunshineroofing.example",
-                "organization": {"name": "Sunshine Roofing Co", "primary_domain": "sunshineroofing.example"},
-            }
-        ]
+        "person": {
+            "email": "sam@sunshineroofing.example",
+            "first_name": "Sam",
+            "last_name": "Chen",
+            "name": "Sam Chen",
+            "phone_numbers": [{"sanitized_number": "+15550100002", "raw_number": "555-0100002"}],
+        }
     }
     provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with(payload))
 
-    results = await provider.discover_people(DiscoveryCriteria(job_titles=["CEO"]))
+    result = await provider.reveal("person-2")
 
-    assert results[0].email == "sam@sunshineroofing.example"
+    assert result == {
+        "first_name": "Sam",
+        "last_name": "Chen",
+        "full_name": "Sam Chen",
+        "email": "sam@sunshineroofing.example",
+        "phone": "+15550100002",
+    }
+
+
+async def test_reveal_filters_locked_email_placeholder():
+    payload = {
+        "person": {
+            "email": "email_not_unlocked@acmedental.example",
+            "first_name": "Jordan",
+            "last_name": "Alvarez",
+        }
+    }
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with(payload))
+
+    result = await provider.reveal("person-1")
+
+    assert result is not None
+    assert result["email"] is None  # locked placeholder must never be stored as a real email
+    assert result["last_name"] == "Alvarez"  # still useful even without email
+
+
+async def test_reveal_returns_none_when_apollo_has_nothing():
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with({"person": None}))
+
+    assert await provider.reveal("unknown-id") is None
+
+
+async def test_reveal_returns_none_when_person_missing_entirely():
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with({}))
+
+    assert await provider.reveal("unknown-id") is None
+
+
+async def test_discover_decision_makers_hits_current_search_endpoint_and_masks():
+    captured = {}
+
+    def on_request(request):
+        captured["path"] = request.url.path
+
+    payload = {
+        "people": [
+            {
+                "id": "person-3",
+                "first_name": "Robin",
+                "last_name_obfuscated": "Sm***h",
+                "title": "Owner",
+                "organization": {"name": "Acme Dental Group", "primary_domain": "acmedental.example"},
+            }
+        ]
+    }
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with(payload, on_request=on_request))
+
+    results = await provider.discover_decision_makers("acmedental.example", ["Owner"])
+
+    assert captured["path"] == "/api/v1/mixed_people/api_search"
+    assert len(results) == 1
+    assert results[0].email is None
+    assert results[0].last_name is None
 
 
 async def test_missing_api_key_raises_immediately():
-    from app.providers.base import ProviderUnavailableError
-
     with pytest.raises(ProviderUnavailableError):
         ApolloCompanyDiscoveryProvider(api_key="")
     with pytest.raises(ProviderUnavailableError):

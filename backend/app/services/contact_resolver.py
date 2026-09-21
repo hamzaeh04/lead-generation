@@ -20,6 +20,8 @@ from app.services.normalization import normalize_email, normalize_phone
 _CONTACT_FIELDS = (
     "first_name", "last_name", "full_name", "job_title", "department",
     "seniority", "email", "phone", "linkedin_url",
+    "city", "state", "country", "industry", "sub_industry",
+    "company_headcount", "company_revenue",
 )
 
 
@@ -82,6 +84,13 @@ class PersonEntityResolver:
             email=email,
             phone=phone,
             linkedin_url=candidate.linkedin_url,
+            city=candidate.city,
+            state=candidate.state,
+            country=candidate.country,
+            industry=candidate.industry,
+            sub_industry=candidate.sub_industry,
+            company_headcount=candidate.company_headcount,
+            company_revenue=candidate.company_revenue,
             field_provenance=self._provenance_for_set_fields(candidate, provider, retrieved_at),
         )
         self.repo.add_source(
@@ -129,6 +138,13 @@ class PersonEntityResolver:
             "email": email,
             "phone": phone,
             "linkedin_url": candidate.linkedin_url,
+            "city": candidate.city,
+            "state": candidate.state,
+            "country": candidate.country,
+            "industry": candidate.industry,
+            "sub_industry": candidate.sub_industry,
+            "company_headcount": candidate.company_headcount,
+            "company_revenue": candidate.company_revenue,
         }
         for field_name, incoming in incoming_values.items():
             current = getattr(contact, field_name)

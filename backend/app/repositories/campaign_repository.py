@@ -54,3 +54,14 @@ class CampaignRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def get_step_by_id(self, campaign_id: uuid.UUID, step_id: uuid.UUID) -> CampaignStep | None:
+        result = await self.session.execute(
+            select(CampaignStep).where(
+                CampaignStep.campaign_id == campaign_id, CampaignStep.id == step_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def delete_step(self, step: CampaignStep) -> None:
+        await self.session.delete(step)

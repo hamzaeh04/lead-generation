@@ -337,3 +337,111 @@ async def test_campaign_endpoints_require_authentication(client):
         "/api/v1/campaigns", params={"workspace_id": str(uuid.uuid4())}
     )
     assert response.status_code == 401
+
+
+async def test_update_campaign_step_edits_fields(client, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    campaign = await _create_campaign(client, headers, workspace_id)
+    step = await _add_step(client, headers, workspace_id, campaign["id"])
+
+    response = await client.patch(
+        f"/api/v1/campaigns/{campaign['id']}/steps/{step['id']}",
+        params={"workspace_id": workspace_id},
+        json={"subject": "New subject", "delay_days": 3},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["subject"] == "New subject"
+    assert body["delay_days"] == 3
+    assert body["body"] == step["body"]  # untouched fields stay as-is
+
+
+async def test_update_campaign_step_number_conflict_returns_409(client, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    campaign = await _create_campaign(client, headers, workspace_id)
+    await _add_step(client, headers, workspace_id, campaign["id"], step_number=1)
+    step_two = await _add_step(client, headers, workspace_id, campaign["id"], step_number=2)
+
+    response = await client.patch(
+        f"/api/v1/campaigns/{campaign['id']}/steps/{step_two['id']}",
+        params={"workspace_id": workspace_id},
+        json={"step_number": 1},
+        headers=headers,
+    )
+    assert response.status_code == 409
+
+
+async def test_swapping_step_numbers_reorders_steps(client, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    campaign = await _create_campaign(client, headers, workspace_id)
+    step_one = await _add_step(client, headers, workspace_id, campaign["id"], step_number=1, delay_days=0)
+    step_two = await _add_step(client, headers, workspace_id, campaign["id"], step_number=2, delay_days=3)
+
+    # Moving step 2 up: give it a temporary out-of-range number first so the
+    # two swaps never collide with an existing step_number mid-flight.
+    await client.patch(
+        f"/api/v1/campaigns/{campaign['id']}/steps/{step_two['id']}",
+        params={"workspace_id": workspace_id},
+        json={"step_number": 99},
+        headers=headers,
+    )
+    await client.patch(
+        f"/api/v1/campaigns/{campaign['id']}/steps/{step_one['id']}",
+        params={"workspace_id": workspace_id},
+        json={"step_number": 2},
+        headers=headers,
+    )
+    response = await client.patch(
+        f"/api/v1/campaigns/{campaign['id']}/steps/{step_two['id']}",
+        params={"workspace_id": workspace_id},
+        json={"step_number": 1},
+        headers=headers,
+    )
+    assert response.status_code == 200
+
+    campaign_response = await client.get(
+        f"/api/v1/campaigns/{campaign['id']}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    steps = sorted(campaign_response.json()["steps"], key=lambda s: s["step_number"])
+    assert steps[0]["id"] == step_two["id"]
+    assert steps[1]["id"] == step_one["id"]
+
+
+async def test_delete_campaign_step_removes_it(client, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    campaign = await _create_campaign(client, headers, workspace_id)
+    step = await _add_step(client, headers, workspace_id, campaign["id"])
+
+    response = await client.delete(
+        f"/api/v1/campaigns/{campaign['id']}/steps/{step['id']}",
+        params={"workspace_id": workspace_id},
+        headers=headers,
+    )
+    assert response.status_code == 204
+
+    campaign_response = await client.get(
+        f"/api/v1/campaigns/{campaign['id']}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert campaign_response.json()["steps"] == []
+
+
+async def test_update_and_delete_step_404_for_unknown_step(client, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    campaign = await _create_campaign(client, headers, workspace_id)
+    fake_step_id = str(uuid.uuid4())
+
+    patch_response = await client.patch(
+        f"/api/v1/campaigns/{campaign['id']}/steps/{fake_step_id}",
+        params={"workspace_id": workspace_id},
+        json={"subject": "x"},
+        headers=headers,
+    )
+    assert patch_response.status_code == 404
+
+    delete_response = await client.delete(
+        f"/api/v1/campaigns/{campaign['id']}/steps/{fake_step_id}",
+        params={"workspace_id": workspace_id},
+        headers=headers,
+    )
+    assert delete_response.status_code == 404

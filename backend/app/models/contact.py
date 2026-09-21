@@ -59,6 +59,22 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     linkedin_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    #: This person's own location — distinct from the company's address
+    #: (e.g. a remote employee). Currently only populated by Smartlead's
+    #: SmartProspect search, which reports it per-person.
+    city: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Firmographic fields reported by the provider alongside this specific
+    #: person (not read from the Company record — a provider may know this
+    #: about the company at search time without us having enriched Company
+    #: with it separately). Bands (e.g. "$1 - 10M") are stored as-is rather
+    #: than parsed into a single number, since that would fabricate false
+    #: precision the provider never gave us.
+    industry: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sub_industry: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    company_headcount: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    company_revenue: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status: Mapped[LeadStatus] = mapped_column(
         Enum(LeadStatus, name="lead_status", values_callable=str_enum_values), default=LeadStatus.NEW, nullable=False
     )
@@ -98,6 +114,19 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         if "company" in inspect(self).unloaded:
             return None
         return self.company.phone if self.company else None
+
+    @property
+    def revealable(self) -> bool:
+        """True if this contact has a source whose provider supports the
+        on-demand /reveal action (currently just Apollo — Smartlead's
+        masked SmartProspect results have no API-based unlock, only a
+        dashboard one). The UI uses this to decide whether to show a
+        "Reveal" button at all rather than showing one that always 404s.
+        Same unloaded-relationship guard as company_name — fails safe
+        (False) when `sources` isn't eager-loaded, not a crash."""
+        if "sources" in inspect(self).unloaded:
+            return False
+        return any(source.provider == "apollo" for source in self.sources)
 
 
 class ContactSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):

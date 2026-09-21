@@ -44,12 +44,7 @@ class Settings(BaseSettings):
     # Provider credentials — all optional; a provider with no key is simply
     # unavailable (ProviderUnavailableError), never a hard startup failure.
     APOLLO_API_KEY: str | None = None
-    PDL_API_KEY: str | None = None
-    SERPAPI_API_KEY: str | None = None
-    APIFY_API_TOKEN: str | None = None
-    HUNTER_API_KEY: str | None = None
-    PHANTOMBUSTER_API_KEY: str | None = None
-    PHANTOMBUSTER_AGENT_ID: str | None = None
+    SMARTLEAD_API_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
     OPENAI_MODEL: str = "gpt-4o-mini"
     GROQ_API_KEY: str | None = None

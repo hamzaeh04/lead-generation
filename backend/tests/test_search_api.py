@@ -1,15 +1,37 @@
+import json
+
 import pytest
 
 from app.models.provider_config import ProviderConfig
+from app.providers.ai.base import AIGenerationRequest, AIGenerationResult
 from app.providers.base import (
     DiscoveryCriteria,
     NormalizedCompany,
     ProviderCategory,
     ProviderMetadata,
+    ProviderUnavailableError,
 )
 from app.providers.lead_sources.base import CompanyDiscoveryProvider
 
 pytestmark = pytest.mark.asyncio
+
+
+class _StubAIProvider:
+    def __init__(self, response: dict):
+        self._response = response
+
+    async def generate(self, request: AIGenerationRequest) -> AIGenerationResult:
+        return AIGenerationResult(
+            text=json.dumps(self._response),
+            model="stub-model",
+            prompt_version=request.prompt_version,
+            source_fields_used=list(request.source_fields.keys()),
+        )
+
+
+class _FailingAIProvider:
+    async def generate(self, request: AIGenerationRequest) -> AIGenerationResult:
+        raise ProviderUnavailableError("groq: simulated outage")
 
 
 class _StubCompanyDiscoveryProvider(CompanyDiscoveryProvider):
@@ -199,162 +221,154 @@ async def test_search_execute_requires_authentication(client):
     assert response.status_code == 401
 
 
-async def test_search_execute_apify_without_actor_config_returns_400(
-    client, db_session, unique_email
-):
+async def test_parse_prompt_splits_known_fields_from_extra_filters(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
-    db_session.add(
-        ProviderConfig(
-            provider="apify",
-            category=ProviderCategory.LOCAL_BUSINESS_DISCOVERY,
-            enabled=True,
-            priority=1,
-        )
-    )
+    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
 
+    ai_response = {
+        "job_titles": ["VP of Sales", "Head of Sales"],
+        "city": "Austin",
+        "employee_count_min": 50,
+        "employee_count_max": 200,
+        "technologies": ["salesforce"],  # not a top-level DiscoveryCriteria field -> extra_filters
+        "department": ["Sales"],  # smartlead-only field -> extra_filters
+    }
+    monkeypatch.setattr(
+        "app.services.prospect_prompt_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubAIProvider(ai_response),
+    )
+
     response = await client.post(
-        "/api/v1/search/execute",
-        json={
-            "workspace_id": workspace_id,
-            "provider": "apify",
-            "category": "local_business_discovery",
-            "criteria": {},
-        },
+        "/api/v1/search/parse-prompt",
+        json={"workspace_id": workspace_id, "provider": "apollo", "prompt": "VPs of sales in Austin using Salesforce"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    criteria = response.json()["criteria"]
+    assert criteria["job_titles"] == ["VP of Sales", "Head of Sales"]
+    assert criteria["city"] == "Austin"
+    assert criteria["employee_count_min"] == 50
+    assert criteria["employee_count_max"] == 200
+    assert criteria["extra_filters"] == {"technologies": ["salesforce"], "department": ["Sales"]}
+
+
+async def test_parse_prompt_never_invents_fields_the_ai_omitted(client, db_session, unique_email, monkeypatch):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.prospect_prompt_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubAIProvider({"job_titles": ["Founder"]}),
+    )
+
+    response = await client.post(
+        "/api/v1/search/parse-prompt",
+        json={"workspace_id": workspace_id, "provider": "apollo", "prompt": "founders"},
+        headers=headers,
+    )
+
+    criteria = response.json()["criteria"]
+    assert criteria["job_titles"] == ["Founder"]
+    assert criteria["city"] is None
+    assert criteria["state"] is None
+    assert criteria["domain"] is None
+    assert criteria["extra_filters"] == {}
+
+
+async def test_parse_prompt_rejects_unknown_provider(client, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    response = await client.post(
+        "/api/v1/search/parse-prompt",
+        json={"workspace_id": workspace_id, "provider": "serpapi", "prompt": "anything"},
         headers=headers,
     )
 
     assert response.status_code == 400
-    assert "No enabled Apify actor" in response.json()["detail"]
 
 
-async def test_search_execute_apify_with_actor_but_no_token_returns_503(
-    client, db_session, unique_email, monkeypatch
-):
-    from app.core.config import get_settings
-    from app.models.actor_config import ActorConfig
-
+async def test_parse_prompt_returns_502_when_ai_output_is_invalid(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
-    db_session.add(
-        ProviderConfig(
-            provider="apify",
-            category=ProviderCategory.LOCAL_BUSINESS_DISCOVERY,
-            enabled=True,
-            priority=1,
-        )
-    )
-    db_session.add(
-        ActorConfig(
-            actor_name="Google Maps Scraper",
-            actor_id="actor-123",
-            category=ProviderCategory.LOCAL_BUSINESS_DISCOVERY,
-            enabled=True,
-            priority=1,
-        )
-    )
+    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
 
-    # This test's whole premise is a missing token — force it empty rather
-    # than relying on the ambient environment not having one configured
-    # (a real deployment's .env may well have a real APIFY_API_TOKEN set).
-    monkeypatch.setenv("APIFY_API_TOKEN", "")
-    get_settings.cache_clear()
+    # employee_count_min must be an int — the AI hallucinated a string.
+    monkeypatch.setattr(
+        "app.services.prospect_prompt_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubAIProvider({"employee_count_min": "a lot"}),
+    )
 
     response = await client.post(
-        "/api/v1/search/execute",
-        json={
-            "workspace_id": workspace_id,
-            "provider": "apify",
-            "category": "local_business_discovery",
-            "criteria": {},
-        },
+        "/api/v1/search/parse-prompt",
+        json={"workspace_id": workspace_id, "provider": "apollo", "prompt": "big companies"},
         headers=headers,
     )
 
-    get_settings.cache_clear()
+    assert response.status_code == 502
+
+
+async def test_parse_prompt_returns_503_when_no_ai_provider_has_credentials(client, db_session, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    await db_session.commit()
+    # GROQ_API_KEY is unset in the test environment, so the registry allows
+    # it but the factory can't build a working provider instance.
+
+    response = await client.post(
+        "/api/v1/search/parse-prompt",
+        json={"workspace_id": workspace_id, "provider": "apollo", "prompt": "founders"},
+        headers=headers,
+    )
 
     assert response.status_code == 503
-    assert "APIFY_API_TOKEN" in response.json()["detail"]
 
 
-async def test_search_execute_apify_full_flow_persists_company(
-    client, db_session, unique_email, monkeypatch
-):
-    import httpx
-
-    from app.models.actor_config import ActorConfig
-
-    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-
-    db_session.add(
-        ProviderConfig(
-            provider="apify",
-            category=ProviderCategory.LOCAL_BUSINESS_DISCOVERY,
-            enabled=True,
-            priority=1,
-        )
-    )
-    db_session.add(
-        ActorConfig(
-            actor_name="Google Maps Scraper",
-            actor_id="actor-123",
-            category=ProviderCategory.LOCAL_BUSINESS_DISCOVERY,
-            enabled=True,
-            priority=1,
-        )
-    )
-    await db_session.commit()
-
-    monkeypatch.setenv("APIFY_API_TOKEN", "test-token")
-    from app.core.config import get_settings
-
-    get_settings.cache_clear()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/runs"):
-            return httpx.Response(200, json={"data": {"id": "run-1", "status": "READY"}})
-        if "/actor-runs/" in request.url.path:
-            return httpx.Response(
-                200,
-                json={"data": {"id": "run-1", "status": "SUCCEEDED", "defaultDatasetId": "ds-1"}},
-            )
-        return httpx.Response(200, json=[{"title": "Acme Dental Group"}])
-
-    # Patch ApifyClient construction to inject a mock transport instead of a real client.
-    import app.providers.lead_sources.apify_provider as apify_module
-
-    original_init = apify_module.ApifyClient.__init__
-
-    def patched_init(self, *, api_token, client=None, poll_interval_seconds=2.0, max_poll_attempts=30):
-        mock_client = httpx.AsyncClient(
-            base_url="https://api.apify.com", transport=httpx.MockTransport(handler)
-        )
-        original_init(
-            self,
-            api_token=api_token,
-            client=mock_client,
-            poll_interval_seconds=0,
-            max_poll_attempts=max_poll_attempts,
-        )
-
-    monkeypatch.setattr(apify_module.ApifyClient, "__init__", patched_init)
+async def test_parse_prompt_requires_workspace_membership(client, unique_email):
+    headers, _ = await _register_and_get_workspace(client, unique_email)
 
     response = await client.post(
-        "/api/v1/search/execute",
+        "/api/v1/search/parse-prompt",
         json={
-            "workspace_id": workspace_id,
-            "provider": "apify",
-            "category": "local_business_discovery",
-            "criteria": {"industry": "dental", "city": "Miami"},
+            "workspace_id": "00000000-0000-0000-0000-000000000000",
+            "provider": "apollo",
+            "prompt": "founders",
         },
         headers=headers,
     )
 
-    get_settings.cache_clear()
+    assert response.status_code == 403
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["companies_created"] == 1
-    assert body["companies"][0]["name"] == "Acme Dental Group"
+
+async def test_parse_prompt_returns_502_when_ai_provider_errors(client, db_session, unique_email, monkeypatch):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.prospect_prompt_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _FailingAIProvider(),
+    )
+
+    response = await client.post(
+        "/api/v1/search/parse-prompt",
+        json={"workspace_id": workspace_id, "provider": "apollo", "prompt": "founders"},
+        headers=headers,
+    )
+
+    assert response.status_code == 502
+
+
+async def test_parse_prompt_requires_authentication(client):
+    response = await client.post(
+        "/api/v1/search/parse-prompt",
+        json={"workspace_id": "00000000-0000-0000-0000-000000000000", "provider": "apollo", "prompt": "founders"},
+    )
+    assert response.status_code == 401

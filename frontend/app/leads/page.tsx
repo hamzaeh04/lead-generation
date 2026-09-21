@@ -1,144 +1,112 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { ChevronRight, Search, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Pill } from "@/components/ui/Pill";
-import { Spinner } from "@/components/ui/Spinner";
-import { Table, TableBody, TableHead, Td, Th, Tr } from "@/components/ui/Table";
-import { listLeads, type LeadStatus } from "@/lib/api";
+import { CardSkeleton } from "@/components/ui/Skeleton";
+import { cn } from "@/lib/cn";
+import { listSearchBatches, type SearchBatch } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 
-const statusOptions: { value: LeadStatus | ""; label: string }[] = [
-  { value: "", label: "All statuses" },
-  { value: "new", label: "New" },
-  { value: "verified", label: "Verified" },
-  { value: "ready_for_outreach", label: "Ready for outreach" },
-  { value: "contacted", label: "Contacted" },
-  { value: "opened", label: "Opened" },
-  { value: "clicked", label: "Clicked" },
-  { value: "replied", label: "Replied" },
-  { value: "interested", label: "Interested" },
-  { value: "meeting", label: "Meeting" },
-  { value: "won", label: "Won" },
-  { value: "lost", label: "Lost" },
-  { value: "unsubscribed", label: "Unsubscribed" },
-  { value: "bounced", label: "Bounced" },
-];
-
-const statusTone: Record<string, "success" | "warning" | "danger" | "accent" | "muted"> = {
-  won: "success",
-  meeting: "success",
-  verified: "success",
-  interested: "accent",
-  replied: "accent",
-  ready_for_outreach: "accent",
-  bounced: "danger",
-  unsubscribed: "danger",
-  lost: "danger",
-  contacted: "warning",
-  opened: "warning",
-  clicked: "warning",
+const PROVIDER_INFO: Record<string, { label: string; badgeClass: string; icon: typeof Zap }> = {
+  apollo: { label: "Apollo", badgeClass: "bg-indigo-500", icon: Zap },
+  smartlead: {
+    label: "Smartlead",
+    badgeClass: "bg-gradient-to-br from-violet-500 to-pink-500",
+    icon: Sparkles,
+  },
 };
+
+function formatBatchNumber(sequence: number): string {
+  return `Batch ${String(sequence).padStart(2, "0")}`;
+}
+
+function BatchRow({ batch }: { batch: SearchBatch }) {
+  const info = PROVIDER_INFO[batch.provider] ?? {
+    label: batch.provider,
+    badgeClass: "bg-fgSubtle",
+    icon: Zap,
+  };
+  const Icon = info.icon;
+  const totalLeads = batch.contacts_created + batch.contacts_matched;
+  const date = new Date(batch.created_at);
+
+  return (
+    <Link
+      href={`/leads/batches/${batch.id}`}
+      className="flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-surface2"
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white",
+            info.badgeClass
+          )}
+        >
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="font-semibold text-fg">{formatBatchNumber(batch.sequence)}</p>
+          <p className="truncate text-sm text-fgMuted">
+            {info.label} · {date.toLocaleDateString()}{" "}
+            {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-4">
+        <span className="text-sm text-fgMuted">
+          {totalLeads} lead{totalLeads === 1 ? "" : "s"}
+        </span>
+        <ChevronRight className="h-4 w-4 text-fgSubtle" />
+      </div>
+    </Link>
+  );
+}
 
 function LeadsContent() {
   const { activeWorkspace } = useWorkspace();
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<LeadStatus | "">("");
 
-  const leadsQuery = useQuery({
-    queryKey: ["leads", activeWorkspace?.id, query, status],
-    queryFn: () =>
-      listLeads(activeWorkspace!.id, {
-        search: query || undefined,
-        status: status || undefined,
-        limit: 100,
-      }),
+  const batchesQuery = useQuery({
+    queryKey: ["search-batches", activeWorkspace?.id],
+    queryFn: () => listSearchBatches(activeWorkspace!.id, { limit: 100 }),
     enabled: !!activeWorkspace,
   });
 
-  const leads = leadsQuery.data ?? [];
+  const batches = batchesQuery.data ?? [];
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">Leads</h1>
-          <p className="mt-1 text-[13px] text-fgMuted">Every contact in this workspace&apos;s CRM pipeline.</p>
-        </div>
-        <div className="flex gap-2">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setQuery(search);
-            }}
-          >
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, email, company…"
-              className="w-64 rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px] text-fg placeholder:text-fgMuted focus:border-accent focus:outline-none"
-            />
-          </form>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as LeadStatus | "")}
-            className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[13px] text-fg focus:border-accent focus:outline-none"
-          >
-            {statusOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {leadsQuery.isLoading && (
-        <div className="flex items-center gap-2 text-[13px] text-fgMuted">
-          <Spinner /> Loading leads…
+    <div className="flex flex-col gap-5">
+      {batchesQuery.isLoading && (
+        <div className="grid grid-cols-1 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
         </div>
       )}
 
-      {leadsQuery.isSuccess && leads.length === 0 && (
+      {!batchesQuery.isLoading && batches.length === 0 && (
         <EmptyState
-          title="No leads match these filters"
-          description="Discover companies and people, or import a CSV, to start building your pipeline."
+          icon={Search}
+          title="No searches run yet"
+          description="Run a search on Discover to build your first batch of leads."
+          action={
+            <Link href="/discover">
+              <Button size="sm">Discover leads</Button>
+            </Link>
+          }
         />
       )}
 
-      {leads.length > 0 && (
-        <Table>
-          <TableHead>
-            <Th>Name</Th>
-            <Th>Company</Th>
-            <Th>Title</Th>
-            <Th>Email</Th>
-            <Th>Status</Th>
-            <Th>Last seen</Th>
-          </TableHead>
-          <TableBody>
-            {leads.map((lead) => (
-              <Tr key={lead.id}>
-                <Td>
-                  <Link href={`/leads/${lead.id}`} className="font-medium text-fg hover:text-accent">
-                    {lead.full_name ?? lead.email ?? "Unnamed contact"}
-                  </Link>
-                </Td>
-                <Td className="text-fgMuted">{lead.company_name ?? "—"}</Td>
-                <Td className="text-fgMuted">{lead.job_title ?? "—"}</Td>
-                <Td className="text-fgMuted">{lead.email ?? "—"}</Td>
-                <Td>
-                  <Pill tone={statusTone[lead.status] ?? "muted"}>{lead.status.replace(/_/g, " ")}</Pill>
-                </Td>
-                <Td className="text-fgMuted">{new Date(lead.last_seen).toLocaleDateString()}</Td>
-              </Tr>
-            ))}
-          </TableBody>
-        </Table>
+      {batches.length > 0 && (
+        <Card className="flex flex-col divide-y divide-border p-0">
+          {batches.map((batch) => (
+            <BatchRow key={batch.id} batch={batch} />
+          ))}
+        </Card>
       )}
     </div>
   );
@@ -146,7 +114,7 @@ function LeadsContent() {
 
 export default function LeadsPage() {
   return (
-    <AppShell title="Leads">
+    <AppShell title="Leads" description="Every search run from Discover, grouped as a batch of leads.">
       <LeadsContent />
     </AppShell>
   );

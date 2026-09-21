@@ -167,7 +167,7 @@ async def test_contact_resolver_matches_on_email(db_session):
     )
     second_candidate = _contact_candidate(
         metadata=ProviderMetadata(
-            provider="hunter",
+            provider="apollo",
             external_id=None,
             source_type="api",
             retrieved_at=datetime.now(timezone.utc),
@@ -182,7 +182,7 @@ async def test_contact_resolver_matches_on_email(db_session):
     assert second.matched_fields == ["email"]
     assert second.contact.id == first.contact.id
     assert second.contact.job_title == "Owner"
-    assert second.contact.field_provenance["job_title"]["provider"] == "hunter"
+    assert second.contact.field_provenance["job_title"]["provider"] == "apollo"
     assert second.confidence == ContactConfidence.HIGH
 
 

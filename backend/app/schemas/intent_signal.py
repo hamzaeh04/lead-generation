@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.providers.intent.base import IntentSignalType
+from app.models.intent_signal import IntentSignalType
 
 
 class IntentSignalCreate(BaseModel):

@@ -10,8 +10,8 @@ blends five signals a rep actually weighs when triaging a pipeline:
   - authority     (20) — can THIS person actually say yes (title match
                           against the ICP's target titles, falling back to
                           a generic seniority tier)
-  - reachability  (15) — can we actually get in touch (verified email beats
-                          an unverified one beats none)
+  - reachability  (15) — can we actually get in touch (has an email on file
+                          or not)
   - engagement    (10) — have they already responded (a "replied" contact
                           outranks a cold "new" one almost regardless of
                           the above)
@@ -22,7 +22,6 @@ value in prioritizing a dead lead, no matter how good the company fit is.
 from __future__ import annotations
 
 from app.models.contact import Contact, LeadStatus
-from app.models.email_verification import EmailVerification, VerificationStatus
 from app.models.icp_profile import ICPProfile
 
 DEFAULT_WEIGHTS: dict[str, int] = {
@@ -83,15 +82,9 @@ def _authority_score(contact: Contact, icp: ICPProfile | None) -> tuple[float, s
     return 0.0, None
 
 
-def _reachability_score(
-    contact: Contact, verification: EmailVerification | None
-) -> tuple[float, str | None]:
-    if verification and verification.verification_status == VerificationStatus.VALID:
-        return 1.0, "verified email on file"
-    if verification and verification.verification_status == VerificationStatus.RISKY:
-        return 0.5, "risky email on file"
+def _reachability_score(contact: Contact) -> tuple[float, str | None]:
     if contact.email:
-        return 0.3, "unverified email on file"
+        return 1.0, "has email on file"
     return 0.0, None
 
 
@@ -108,7 +101,6 @@ def compute_lead_score(
     icp_score: int | None,
     intent_score: int,
     icp: ICPProfile | None,
-    verification: EmailVerification | None,
     weights: dict[str, int] | None = None,
 ) -> tuple[int, list[str]]:
     weights = weights or DEFAULT_WEIGHTS
@@ -134,7 +126,7 @@ def compute_lead_score(
     if authority_note:
         breakdown.append(authority_note)
 
-    reachability_fraction, reachability_note = _reachability_score(contact, verification)
+    reachability_fraction, reachability_note = _reachability_score(contact)
     total += weights["reachability"] * reachability_fraction
     if reachability_note:
         breakdown.append(reachability_note)

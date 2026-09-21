@@ -34,8 +34,16 @@ class ContactRead(BaseModel):
     email: str | None
     phone: str | None
     linkedin_url: str | None
+    city: str | None
+    state: str | None
+    country: str | None
+    industry: str | None
+    sub_industry: str | None
+    company_headcount: str | None
+    company_revenue: str | None
     status: LeadStatus
     field_provenance: dict[str, Any]
+    revealable: bool
     first_seen: datetime
     last_seen: datetime
 
@@ -63,3 +71,8 @@ class BulkTagResponse(BaseModel):
     tagged: int
     already_tagged: int
     not_found: int
+
+
+class RevealResponse(BaseModel):
+    contact: ContactRead
+    revealed: bool

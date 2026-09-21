@@ -4,11 +4,14 @@ import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { LogoMarkIcon } from "@/components/icons";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Field } from "@/components/ui/Label";
+import { Input } from "@/components/ui/Input";
+import { getErrorMessage } from "@/lib/errors";
 import { registerAccount, storeSession } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
-
-const inputClass =
-  "rounded-lg border border-border bg-surface px-3 py-2 text-[13.5px] text-fg placeholder:text-fgMuted focus:border-accent focus:outline-none";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -30,69 +33,90 @@ export default function RegisterPage() {
   });
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-5 bg-bg px-6 text-fg">
-      <h1 className="text-xl font-semibold tracking-tight">Create your workspace</h1>
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          mutation.mutate({
-            email,
-            password,
-            full_name: fullName || undefined,
-            workspace_name: workspaceName,
-          });
-        }}
-      >
-        <input
-          required
-          placeholder="Workspace name"
-          className={inputClass}
-          value={workspaceName}
-          onChange={(e) => setWorkspaceName(e.target.value)}
-        />
-        <input
-          placeholder="Full name"
-          className={inputClass}
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-        <input
-          type="email"
-          required
-          placeholder="Email"
-          className={inputClass}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          type="password"
-          required
-          minLength={8}
-          placeholder="Password"
-          className={inputClass}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="rounded-lg bg-accent px-4 py-2 text-[13.5px] font-medium text-white disabled:opacity-50"
-        >
-          {mutation.isPending ? "Creating…" : "Create workspace"}
-        </button>
-        {mutation.isError && (
-          <p className="text-[12.5px] text-danger">
-            Could not create account. Email may already be registered.
-          </p>
-        )}
-      </form>
-      <p className="text-[13px] text-fgMuted">
-        Already have an account?{" "}
-        <Link href="/login" className="text-accent hover:underline">
-          Log in
-        </Link>
-      </p>
+    <main className="flex min-h-screen items-center justify-center bg-bg px-6 py-12">
+      <div className="flex w-full max-w-[380px] flex-col gap-6">
+        <div className="flex items-center justify-center gap-2 text-md font-semibold tracking-tight text-fg">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-white">
+            <LogoMarkIcon className="h-3.5 w-3.5" stroke="currentColor" />
+          </span>
+          Lead Intelligence
+        </div>
+
+        <Card className="flex flex-col gap-5 p-7">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-fg">Create your workspace</h1>
+            <p className="mt-1 text-sm text-fgMuted">Start finding and reaching real leads in minutes.</p>
+          </div>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              mutation.mutate({
+                email,
+                password,
+                full_name: fullName || undefined,
+                workspace_name: workspaceName,
+              });
+            }}
+          >
+            <Field label="Workspace name" htmlFor="workspace_name">
+              <Input
+                id="workspace_name"
+                required
+                placeholder="Acme Agency"
+                value={workspaceName}
+                onChange={(e) => setWorkspaceName(e.target.value)}
+              />
+            </Field>
+            <Field label="Full name" htmlFor="full_name" hint="Optional">
+              <Input
+                id="full_name"
+                placeholder="Jordan Alvarez"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
+            </Field>
+            <Field label="Email" htmlFor="email">
+              <Input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </Field>
+            <Field label="Password" htmlFor="password" hint="At least 8 characters">
+              <Input
+                id="password"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+            <Button type="submit" loading={mutation.isPending} className="mt-1 w-full">
+              {mutation.isPending ? "Creating…" : "Create workspace"}
+            </Button>
+            {mutation.isError && (
+              <p className="text-sm text-danger">
+                {getErrorMessage(mutation.error, "Could not create account. Email may already be registered.")}
+              </p>
+            )}
+          </form>
+        </Card>
+
+        <p className="text-center text-sm text-fgMuted">
+          Already have an account?{" "}
+          <Link href="/login" className="font-medium text-accent hover:underline">
+            Log in
+          </Link>
+        </p>
+      </div>
     </main>
   );
 }

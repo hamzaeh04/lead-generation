@@ -27,7 +27,7 @@ async def test_list_providers_requires_authentication(client):
 async def test_list_providers_returns_seeded_registry(client, db_session, unique_email):
     db_session.add(
         ProviderConfig(
-            provider="hunter", category=ProviderCategory.EMAIL_FINDER, enabled=False, priority=1
+            provider="smartlead", category=ProviderCategory.PERSON_DISCOVERY, enabled=False, priority=1
         )
     )
     await db_session.commit()
@@ -39,12 +39,12 @@ async def test_list_providers_returns_seeded_registry(client, db_session, unique
 
     assert response.status_code == 200
     providers = response.json()
-    assert any(p["provider"] == "hunter" and p["category"] == "email_finder" for p in providers)
+    assert any(p["provider"] == "smartlead" and p["category"] == "person_discovery" for p in providers)
 
 
 async def test_non_superuser_cannot_update_provider(client, db_session, unique_email):
     provider_config = ProviderConfig(
-        provider="hunter", category=ProviderCategory.EMAIL_FINDER, enabled=False, priority=1
+        provider="smartlead", category=ProviderCategory.PERSON_DISCOVERY, enabled=False, priority=1
     )
     db_session.add(provider_config)
     await db_session.commit()
@@ -65,7 +65,7 @@ async def test_superuser_can_toggle_provider(client, db_session, unique_email):
     from app.models.user import User
 
     provider_config = ProviderConfig(
-        provider="hunter", category=ProviderCategory.EMAIL_FINDER, enabled=False, priority=1
+        provider="smartlead", category=ProviderCategory.PERSON_DISCOVERY, enabled=False, priority=1
     )
     db_session.add(provider_config)
     await db_session.commit()

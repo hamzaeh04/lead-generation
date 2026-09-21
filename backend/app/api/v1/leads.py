@@ -5,13 +5,17 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session, require_workspace_member
+from app.api.deps import (
+    get_current_user,
+    get_db_session,
+    require_workspace_editor,
+    require_workspace_member,
+)
 from app.core.config import Settings, get_settings
 from app.models.contact import LeadStatus
 from app.repositories.ai_generation_repository import AIGenerationRepository
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.contact_repository import ContactRepository
-from app.repositories.email_verification_repository import EmailVerificationRepository
 from app.repositories.icp_profile_repository import ICPProfileRepository
 from app.repositories.intent_signal_repository import IntentSignalRepository
 from app.repositories.note_repository import NoteRepository
@@ -25,18 +29,17 @@ from app.schemas.contact import (
     BulkTagResponse,
     ContactRead,
     LeadStatusUpdate,
+    RevealResponse,
 )
 from app.schemas.csv_import import ImportMapping, ImportPreviewResponse, ImportResultResponse
-from app.schemas.email_verification import EmailVerificationRead, FindEmailResponse
 from app.schemas.lead_score import LeadScoreRead
 from app.schemas.note import NoteCreate, NoteRead
 from app.schemas.task import TaskCreate, TaskRead, TaskUpdate
 from app.services.csv_export_service import CsvExportService
 from app.services.csv_import_service import CsvImportService, preview_csv
-from app.services.email_discovery_service import EmailDiscoveryService
-from app.services.email_verification_service import EmailVerificationService
 from app.services.icp_score_service import compute_icp_score
 from app.services.intent_score_service import compute_intent_score
+from app.services.lead_reveal_service import LeadRevealService
 from app.services.lead_score_service import compute_lead_score
 from app.services.personalization_service import PersonalizationService
 
@@ -218,62 +221,29 @@ async def get_lead_score(
                     )
                     icp_score, _ = compute_icp_score(company, company_contacts, icp)
 
-    verification = await EmailVerificationRepository(session).get_latest_for_contact(
-        workspace_id, contact_id
-    )
-
     score, breakdown = compute_lead_score(
         contact=contact,
         icp_score=icp_score,
         intent_score=intent_score,
         icp=icp,
-        verification=verification,
     )
     return LeadScoreRead(contact_id=contact_id, score=score, breakdown=breakdown)
 
 
-@router.post("/{contact_id}/find-email", response_model=FindEmailResponse)
-async def find_lead_email(
+@router.post("/{contact_id}/reveal", response_model=RevealResponse)
+async def reveal_lead_details(
     contact_id: uuid.UUID,
     workspace_id: uuid.UUID,
-    _membership=Depends(require_workspace_member),
+    _membership=Depends(require_workspace_editor),
     session: AsyncSession = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ):
-    service = EmailDiscoveryService(session, settings)
-    contact, candidate = await service.find_email(workspace_id=workspace_id, contact_id=contact_id)
-    return FindEmailResponse(
-        contact=contact,
-        email_found=candidate is not None,
-        confidence=candidate.confidence.value if candidate else None,
-    )
-
-
-@router.post("/{contact_id}/verify", response_model=EmailVerificationRead)
-async def verify_lead_email(
-    contact_id: uuid.UUID,
-    workspace_id: uuid.UUID,
-    _membership=Depends(require_workspace_member),
-    session: AsyncSession = Depends(get_db_session),
-    settings: Settings = Depends(get_settings),
-):
-    service = EmailVerificationService(session, settings)
-    return await service.verify(workspace_id=workspace_id, contact_id=contact_id)
-
-
-@router.get("/{contact_id}/verification", response_model=EmailVerificationRead)
-async def get_latest_lead_verification(
-    contact_id: uuid.UUID,
-    workspace_id: uuid.UUID,
-    _membership=Depends(require_workspace_member),
-    session: AsyncSession = Depends(get_db_session),
-):
-    verification = await EmailVerificationRepository(session).get_latest_for_contact(
-        workspace_id, contact_id
-    )
-    if verification is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No verification on file")
-    return verification
+    """Spends a provider credit (e.g. an Apollo credit) to reveal a masked
+    search result's real email/phone/name — an explicit, per-lead action,
+    not something that happens automatically for every search result."""
+    service = LeadRevealService(session, settings)
+    contact, revealed = await service.reveal(workspace_id=workspace_id, contact_id=contact_id)
+    return RevealResponse(contact=contact, revealed=revealed)
 
 
 @router.post("/{contact_id}/personalize", response_model=AIGenerationRead)

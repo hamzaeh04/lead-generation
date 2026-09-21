@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from app.models.intent_signal import IntentSignal
-from app.providers.intent.base import IntentSignalType
+from app.models.intent_signal import IntentSignalType
 
 DEFAULT_SIGNAL_WEIGHTS: dict[IntentSignalType, int] = {
     IntentSignalType.SERVICE_REQUEST: 30,

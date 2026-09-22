@@ -877,6 +877,19 @@ export async function enrollContacts(
   return data;
 }
 
+export async function enrollBatches(
+  workspaceId: string,
+  campaignId: string,
+  batchIds: string[]
+): Promise<EnrollResponse> {
+  const { data } = await api.post<EnrollResponse>(
+    `/campaigns/${campaignId}/enroll`,
+    { batch_ids: batchIds },
+    { params: { workspace_id: workspaceId } }
+  );
+  return data;
+}
+
 async function setCampaignLifecycle(
   workspaceId: string,
   campaignId: string,

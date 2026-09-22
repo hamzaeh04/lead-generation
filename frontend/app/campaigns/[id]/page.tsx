@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ColumnDef, type RowSelectionState } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -21,8 +20,8 @@ import {
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Combobox } from "@/components/ui/Combobox";
-import { DataTable } from "@/components/ui/DataTable";
 import {
   Dialog,
   DialogContent,
@@ -50,12 +49,12 @@ import { getErrorMessage } from "@/lib/errors";
 import {
   addCampaignStep,
   cancelCampaign,
-  type Contact,
   deleteCampaignStep,
-  enrollContacts,
+  enrollBatches,
   getCampaign,
   getCampaignReport,
   listLeads,
+  listSearchBatches,
   pauseCampaign,
   previewCampaignStep,
   processCampaignNow,
@@ -65,6 +64,7 @@ import {
   type Campaign,
   type CampaignStatus,
   type CampaignStep,
+  type SearchBatch,
 } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 
@@ -465,52 +465,115 @@ const enrollColumns: ColumnDef<Contact, unknown>[] = [
   },
 ];
 
-function EnrollSection({ campaignId, workspaceId }: { campaignId: string; workspaceId: string }) {
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+function batchLabel(batch: SearchBatch) {
+  const seq = String(batch.sequence).padStart(2, "0");
+  const contacts = batch.contacts_created + batch.contacts_matched;
+  return `Batch ${seq} · ${batch.provider} · ${contacts} contact${contacts === 1 ? "" : "s"}`;
+}
 
-  const leadsQuery = useQuery({
-    queryKey: ["enroll-leads", workspaceId, query],
-    queryFn: () => listLeads(workspaceId, { search: query || undefined, limit: 50 }),
+function EnrollSection({ campaignId, workspaceId }: { campaignId: string; workspaceId: string }) {
+  const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
+
+  const batchesQuery = useQuery({
+    queryKey: ["search-batches", workspaceId],
+    queryFn: () => listSearchBatches(workspaceId, { limit: 100 }),
   });
 
-  const selectedIds = Object.keys(rowSelection);
+  const batches = batchesQuery.data ?? [];
+  const selectedCount = selectedBatchIds.size;
+
+  function toggleBatch(batchId: string, checked: boolean) {
+    setSelectedBatchIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(batchId);
+      else next.delete(batchId);
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    if (!checked) {
+      setSelectedBatchIds(new Set());
+      return;
+    }
+    setSelectedBatchIds(new Set(batches.map((b) => b.id)));
+  }
 
   const mutation = useMutation({
-    mutationFn: () => enrollContacts(workspaceId, campaignId, selectedIds),
+    mutationFn: () => enrollBatches(workspaceId, campaignId, Array.from(selectedBatchIds)),
     onSuccess: (result) => {
-      setRowSelection({});
-      toast.success(`${result.enrolled} enrolled, ${result.already_enrolled} already enrolled, ${result.not_found} not found`);
+      setSelectedBatchIds(new Set());
+      toast.success(
+        `${result.enrolled} enrolled, ${result.already_enrolled} already enrolled, ${result.not_found} not found`
+      );
     },
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
   return (
     <Card className="flex flex-col gap-3">
-      <h2 className="text-base font-semibold text-fg">Enroll contacts</h2>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setQuery(search);
-        }}
+      <div>
+        <h2 className="text-base font-semibold text-fg">Enroll contacts</h2>
+        <p className="mt-1 text-sm text-fgMuted">
+          Select discovery batches — every contact in those batches is enrolled for this campaign&apos;s
+          sends.
+        </p>
+      </div>
+
+      {batchesQuery.isLoading && (
+        <div className="flex items-center gap-2 text-sm text-fgMuted">
+          <Skeleton className="h-4 w-4 rounded" /> Loading batches…
+        </div>
+      )}
+
+      {batchesQuery.isSuccess && batches.length === 0 && (
+        <EmptyState
+          title="No batches yet"
+          description="Run a Discover search first — each run becomes a batch you can enroll here."
+        />
+      )}
+
+      {batches.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-lg border border-border">
+          <label className="flex items-center gap-2 border-b border-border px-3 py-2 text-sm font-medium text-fg">
+            <Checkbox
+              checked={selectedCount > 0 && selectedCount === batches.length}
+              onCheckedChange={(value) => toggleAll(value === true)}
+            />
+            Select all batches
+          </label>
+          <ul className="max-h-80 divide-y divide-border overflow-y-auto">
+            {batches.map((batch) => {
+              const checked = selectedBatchIds.has(batch.id);
+              return (
+                <li key={batch.id}>
+                  <label className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-surface2">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(value) => toggleBatch(batch.id, value === true)}
+                      className="mt-0.5"
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-sm font-medium text-fg">{batchLabel(batch)}</span>
+                      <span className="text-xs text-fgMuted">
+                        {new Date(batch.created_at).toLocaleString()} · {batch.category.replace(/_/g, " ")}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      <Button
+        disabled={selectedCount === 0}
+        loading={mutation.isPending}
+        onClick={() => mutation.mutate()}
+        className="self-start"
       >
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search leads to enroll…" />
-      </form>
-
-      <DataTable
-        columns={enrollColumns}
-        data={leadsQuery.data ?? []}
-        getRowId={(row) => row.id}
-        isLoading={leadsQuery.isLoading}
-        selectable
-        rowSelection={rowSelection}
-        onRowSelectionChange={setRowSelection}
-        emptyTitle="No leads match this search"
-      />
-
-      <Button disabled={selectedIds.length === 0} loading={mutation.isPending} onClick={() => mutation.mutate()} className="self-start">
-        Enroll {selectedIds.length || ""}
+        Enroll {selectedCount || ""} batch{selectedCount === 1 ? "" : "es"} &amp; send
       </Button>
     </Card>
   );

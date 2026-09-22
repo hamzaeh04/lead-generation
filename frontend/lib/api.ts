@@ -349,8 +349,75 @@ export interface Contact {
    * (e.g. Smartlead), so the UI never shows a Reveal button that would
    * just fail. */
   revealable: boolean;
+  latest_qualification: LeadQualificationSummary | null;
   first_seen: string;
   last_seen: string;
+}
+
+export type QualificationTier = "A" | "B" | "C" | "D" | "E";
+
+export interface LeadQualificationSummary {
+  tier: QualificationTier;
+  composite_score: number;
+  confidence: number;
+  scored_at: string;
+}
+
+export interface LeadQualificationRead extends LeadQualificationSummary {
+  id: string;
+  contact_id: string;
+  provider: string;
+  model: string;
+  prompt_version: string;
+  score_version: string;
+  tier_rationale: string;
+  dimensions: Record<string, { score: number; confidence: number; reasoning: string }>;
+  evidence: {
+    dimension: string;
+    claim: string;
+    observation: string;
+    source_platform: string;
+    source_field_or_url: string;
+    inference_type: "observed" | "inferred";
+    strength: "strong" | "moderate" | "weak";
+  }[];
+  overrides_triggered: string[];
+  disqualifier: string | null;
+  missing_data: { field: string; why_it_matters: string; how_to_obtain: string }[];
+  enrichment_priority: "high" | "medium" | "low" | null;
+  recommended_channel: "email" | "call" | "linkedin" | "multi" | null;
+  recommended_angle: string | null;
+  objection_to_expect: string | null;
+  estimated_deal_band: "small" | "mid" | "large" | "unknown" | null;
+  next_review_date: string | null;
+  human_review_required: boolean;
+  human_review_reason: string | null;
+  uncertainty_notes: string | null;
+}
+
+export async function qualifyLead(workspaceId: string, contactId: string): Promise<LeadQualificationRead> {
+  const { data } = await api.post<LeadQualificationRead>(
+    `/leads/${contactId}/qualify`,
+    {},
+    { params: { workspace_id: workspaceId } }
+  );
+  return data;
+}
+
+export interface BatchQualifyResponse {
+  qualified: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+export async function qualifyBatch(workspaceId: string, batchId: string): Promise<BatchQualifyResponse> {
+  const { data } = await api.post<BatchQualifyResponse>(
+    `/search-batches/${batchId}/qualify-all`,
+    {},
+    { params: { workspace_id: workspaceId } }
+  );
+  return data;
 }
 
 export async function listLeads(
@@ -407,19 +474,6 @@ export async function bulkUpdateLeadStatus(
     { contact_ids: contactIds, status },
     { params: { workspace_id: workspaceId } }
   );
-  return data;
-}
-
-export interface LeadScore {
-  contact_id: string;
-  score: number;
-  breakdown: string[];
-}
-
-export async function getLeadScore(workspaceId: string, contactId: string): Promise<LeadScore> {
-  const { data } = await api.get<LeadScore>(`/leads/${contactId}/lead-score`, {
-    params: { workspace_id: workspaceId },
-  });
   return data;
 }
 

@@ -103,6 +103,20 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sources: Mapped[list["ContactSource"]] = relationship(
         back_populates="contact", cascade="all, delete-orphan"
     )
+    qualifications: Mapped[list["LeadQualification"]] = relationship(  # noqa: F821
+        back_populates="contact", cascade="all, delete-orphan"
+    )
+
+    @property
+    def latest_qualification(self) -> "LeadQualification | None":  # noqa: F821
+        """Most recent scoring run, or None if never scored. Same
+        unloaded-relationship guard as company_name — fails safe (None)
+        rather than crashing when `qualifications` isn't eager-loaded."""
+        if "qualifications" in inspect(self).unloaded:
+            return None
+        if not self.qualifications:
+            return None
+        return max(self.qualifications, key=lambda q: q.scored_at)
 
     @property
     def company_name(self) -> str | None:
@@ -129,21 +143,27 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     @property
     def revealable(self) -> bool:
         """True only when clicking "Reveal" could plausibly do something:
-        a source supports it (currently just Apollo — Smartlead's masked
-        SmartProspect results have no API-based unlock, only a dashboard
-        one), there's no email yet, and reveal hasn't already been tried
-        once and come up empty. That last check matters because Apollo's
-        /people/match has no "already tried" memory of its own — calling
-        it again for the same person spends another credit for the same
-        non-result, so the UI must stop offering the button once one
-        attempt has failed rather than let it be clicked repeatedly.
+        a source supports it (Apollo always; Smartlead only if its source
+        has the `filter_id` its unlock call needs — captured at search
+        time, so a contact found before that existed can't be unlocked),
+        there's no email yet, and reveal hasn't already been tried once
+        and come up empty. That last check matters because neither
+        provider's unlock call has "already tried" memory of its own —
+        calling it again for the same person spends another credit for
+        the same non-result, so the UI must stop offering the button once
+        one attempt has failed rather than let it be clicked repeatedly.
         Same unloaded-relationship guard as company_name — fails safe
         (False) when `sources` isn't eager-loaded, not a crash."""
         if self.email or self.email_reveal_attempted:
             return False
         if "sources" in inspect(self).unloaded:
             return False
-        return any(source.provider == "apollo" for source in self.sources)
+        for source in self.sources:
+            if source.provider == "apollo":
+                return True
+            if source.provider == "smartlead" and (source.raw_reference or {}).get("_smartlead_filter_id"):
+                return True
+        return False
 
 
 class ContactSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):

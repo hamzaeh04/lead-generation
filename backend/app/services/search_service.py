@@ -34,6 +34,8 @@ from app.repositories.search_batch_repository import SearchBatchRepository
 from app.services import provider_factory
 from app.services.company_resolver import CompanyEntityResolver
 from app.services.contact_resolver import PersonEntityResolver
+from app.services.lead_qualification_service import LeadQualificationService
+from app.services.lead_reveal_service import _AUTO_REVEAL_PROVIDERS, LeadRevealService
 from app.services.provider_usage_tracker import ProviderUsageRecorder
 from app.utils.logging import get_logger
 
@@ -174,14 +176,64 @@ class SearchService:
             await self.session.refresh(company)
         if touched_contacts:
             # A plain refresh() only covers column attributes, not the
-            # `company` relationship ContactRead.company_name reads — a
-            # fresh eager-loaded re-query both re-hydrates expired columns
-            # and loads `company` in one pass, avoiding a MissingGreenlet
-            # from an unloaded relationship touched during serialization.
+            # `company`/`sources` relationships ContactRead.company_name
+            # and .revealable read — a fresh eager-loaded re-query both
+            # re-hydrates expired columns and loads both relationships in
+            # one pass, avoiding a MissingGreenlet from an unloaded
+            # relationship touched during serialization.
             reloaded = await self.session.execute(
                 select(Contact)
                 .where(Contact.id.in_(touched_contacts.keys()))
-                .options(selectinload(Contact.company))
+                .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
+            )
+            touched_contacts = {c.id: c for c in reloaded.scalars().all()}
+
+        if touched_contacts and provider_name in _AUTO_REVEAL_PROVIDERS:
+            # Reveal masked results automatically — no manual "Reveal"
+            # button anymore, per explicit instruction. Runs before
+            # qualification so the AI scoring step sees real email/
+            # location/seniority data instead of the pre-reveal masked
+            # state. reveal_many reuses reveal()'s own guards (already
+            # has email, already attempted) so this never re-bills a
+            # contact across repeated searches.
+            reveal_service = LeadRevealService(self.session, self.settings)
+            await reveal_service.reveal_many(
+                workspace_id=workspace_id, contacts=list(touched_contacts.values()), provider=provider_name
+            )
+            reloaded = await self.session.execute(
+                select(Contact)
+                .where(Contact.id.in_(touched_contacts.keys()))
+                .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
+                .execution_options(populate_existing=True)
+            )
+            touched_contacts = {c.id: c for c in reloaded.scalars().all()}
+
+        qualification_result = None
+        if touched_contacts:
+            # Score every lead this search touched immediately, rather than
+            # leaving it to a separate manual step — paced (see
+            # LeadQualificationService._BATCH_PACING_SECONDS) to stay under
+            # the AI provider's burst rate limit. This is why a person
+            # search now takes noticeably longer than before: it's no
+            # longer just the provider call, it's provider call + one AI
+            # qualification per new lead.
+            qualification_service = LeadQualificationService(self.session, self.settings)
+            qualification_result = await qualification_service.qualify_many(
+                workspace_id=workspace_id, contacts=list(touched_contacts.values())
+            )
+            # qualify_many committed its own rows per-contact; re-fetch so
+            # the response reflects each contact's just-written qualification
+            # instead of the pre-scoring snapshot taken above. populate_existing
+            # is required here: these Contact objects are already identity-mapped
+            # in this same session with `qualifications` already loaded (as
+            # empty, from the reload above) — without it, SQLAlchemy trusts
+            # that already-loaded state and silently keeps serving the stale
+            # empty list instead of re-querying it.
+            reloaded = await self.session.execute(
+                select(Contact)
+                .where(Contact.id.in_(touched_contacts.keys()))
+                .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
+                .execution_options(populate_existing=True)
             )
             touched_contacts = {c.id: c for c in reloaded.scalars().all()}
 
@@ -194,6 +246,8 @@ class SearchService:
             companies_matched=companies_matched,
             contacts_created=contacts_created,
             contacts_matched=contacts_matched,
+            leads_qualified=qualification_result.qualified if qualification_result else 0,
+            leads_qualify_failed=qualification_result.failed if qualification_result else 0,
         )
 
         return {

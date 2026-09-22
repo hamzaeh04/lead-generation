@@ -93,7 +93,7 @@ class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
         people = payload.get("people") or []
         return [self._to_masked_contact(p) for p in people]
 
-    async def reveal(self, person_id: str) -> dict | None:
+    async def reveal(self, person_id: str, *, raw_reference: dict | None = None) -> dict | None:
         """Enriches one masked search result into full contact + company
         details — Apollo's /people/match response includes far more than
         email/phone (real location, seniority, department, deliverability

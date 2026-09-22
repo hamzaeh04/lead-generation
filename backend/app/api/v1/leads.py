@@ -14,10 +14,7 @@ from app.api.deps import (
 from app.core.config import Settings, get_settings
 from app.models.contact import LeadStatus
 from app.repositories.ai_generation_repository import AIGenerationRepository
-from app.repositories.company_repository import CompanyRepository
 from app.repositories.contact_repository import ContactRepository
-from app.repositories.icp_profile_repository import ICPProfileRepository
-from app.repositories.intent_signal_repository import IntentSignalRepository
 from app.repositories.note_repository import NoteRepository
 from app.repositories.tag_repository import TagRepository
 from app.repositories.task_repository import TaskRepository
@@ -32,15 +29,13 @@ from app.schemas.contact import (
     RevealResponse,
 )
 from app.schemas.csv_import import ImportMapping, ImportPreviewResponse, ImportResultResponse
-from app.schemas.lead_score import LeadScoreRead
+from app.schemas.lead_qualification import LeadQualificationRead
 from app.schemas.note import NoteCreate, NoteRead
 from app.schemas.task import TaskCreate, TaskRead, TaskUpdate
 from app.services.csv_export_service import CsvExportService
 from app.services.csv_import_service import CsvImportService, preview_csv
-from app.services.icp_score_service import compute_icp_score
-from app.services.intent_score_service import compute_intent_score
+from app.services.lead_qualification_service import LeadQualificationService
 from app.services.lead_reveal_service import LeadRevealService
-from app.services.lead_score_service import compute_lead_score
 from app.services.personalization_service import PersonalizationService
 
 router = APIRouter(prefix="/leads", tags=["leads"])
@@ -188,48 +183,6 @@ async def get_lead(
     return contact
 
 
-@router.get("/{contact_id}/lead-score", response_model=LeadScoreRead)
-async def get_lead_score(
-    contact_id: uuid.UUID,
-    workspace_id: uuid.UUID,
-    icp_profile_id: uuid.UUID | None = Query(default=None),
-    _membership=Depends(require_workspace_member),
-    session: AsyncSession = Depends(get_db_session),
-):
-    """A sales rep's per-contact prioritization score — company fit, buying
-    signal timing, this contact's authority to buy, reachability, and how
-    far they've already engaged. See lead_score_service for the breakdown."""
-    contact = await _get_contact_or_404(session, workspace_id, contact_id)
-
-    icp = None
-    icp_score = None
-    intent_score = 0
-
-    if contact.company_id:
-        company = await CompanyRepository(session).get_by_id(workspace_id, contact.company_id)
-        if company is not None:
-            signals = await IntentSignalRepository(session).list_for_company(
-                workspace_id, contact.company_id
-            )
-            intent_score = compute_intent_score(signals)
-
-            if icp_profile_id:
-                icp = await ICPProfileRepository(session).get_by_id(workspace_id, icp_profile_id)
-                if icp is not None:
-                    company_contacts = await ContactRepository(session).list_for_company(
-                        workspace_id, contact.company_id
-                    )
-                    icp_score, _ = compute_icp_score(company, company_contacts, icp)
-
-    score, breakdown = compute_lead_score(
-        contact=contact,
-        icp_score=icp_score,
-        intent_score=intent_score,
-        icp=icp,
-    )
-    return LeadScoreRead(contact_id=contact_id, score=score, breakdown=breakdown)
-
-
 @router.post("/{contact_id}/reveal", response_model=RevealResponse)
 async def reveal_lead_details(
     contact_id: uuid.UUID,
@@ -244,6 +197,21 @@ async def reveal_lead_details(
     service = LeadRevealService(session, settings)
     contact, revealed = await service.reveal(workspace_id=workspace_id, contact_id=contact_id)
     return RevealResponse(contact=contact, revealed=revealed)
+
+
+@router.post("/{contact_id}/qualify", response_model=LeadQualificationRead)
+async def qualify_lead(
+    contact_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    _membership=Depends(require_workspace_member),
+    session: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+):
+    """Scores this lead against the need/capacity/timing/reachability
+    rubric via an AI provider — an explicit, on-demand action per lead,
+    not something that runs automatically for every search result."""
+    service = LeadQualificationService(session, settings)
+    return await service.qualify(workspace_id=workspace_id, contact_id=contact_id)
 
 
 @router.post("/{contact_id}/personalize", response_model=AIGenerationRead)

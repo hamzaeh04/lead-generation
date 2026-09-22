@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { tierTone } from "@/components/leads/lead-table-columns";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -21,7 +22,6 @@ import {
   findDecisionMakers,
   getCompany,
   getIntentScore,
-  getLeadScore,
   listCompanySources,
   listLeads,
   type Contact,
@@ -40,12 +40,7 @@ const statusTone: Record<string, "success" | "warning" | "danger" | "accent" | "
   lost: "danger",
 };
 
-function ContactRow({ contact, workspaceId }: { contact: Contact; workspaceId: string }) {
-  const scoreQuery = useQuery({
-    queryKey: ["lead-score", workspaceId, contact.id],
-    queryFn: () => getLeadScore(workspaceId, contact.id),
-  });
-
+function ContactRow({ contact }: { contact: Contact }) {
   return (
     <Link href={`/leads/${contact.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface2">
       <div>
@@ -53,12 +48,14 @@ function ContactRow({ contact, workspaceId }: { contact: Contact; workspaceId: s
         <div className="text-sm text-fgMuted">{contact.job_title ?? contact.email ?? "—"}</div>
       </div>
       <div className="flex items-center gap-3">
-        {scoreQuery.data && (
-          <span
-            className="font-mono text-sm tabular-nums text-fgMuted"
-            title="Lead score: fit + intent + authority + reachability + engagement"
-          >
-            {scoreQuery.data.score}/100
+        {contact.latest_qualification && (
+          <span className="flex items-center gap-1.5" title="AI qualification">
+            <Pill tone={tierTone[contact.latest_qualification.tier] ?? "muted"}>
+              Tier {contact.latest_qualification.tier}
+            </Pill>
+            <span className="font-mono text-sm tabular-nums text-fgMuted">
+              {Math.round(contact.latest_qualification.composite_score)}
+            </span>
           </span>
         )}
         <Pill tone={statusTone[contact.status] ?? "muted"}>{contact.status.replace(/_/g, " ")}</Pill>
@@ -238,7 +235,7 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
             {contactsQuery.data && contactsQuery.data.length > 0 ? (
               <Card className="flex flex-col divide-y divide-border p-0">
                 {contactsQuery.data.map((contact) => (
-                  <ContactRow key={contact.id} contact={contact} workspaceId={workspaceId!} />
+                  <ContactRow key={contact.id} contact={contact} />
                 ))}
               </Card>
             ) : (

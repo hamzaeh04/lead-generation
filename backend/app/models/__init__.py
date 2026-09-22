@@ -6,6 +6,7 @@ from app.models.contact import Contact, ContactSource, LeadStatus
 from app.models.email_event import EmailEvent, EmailEventType
 from app.models.icp_profile import ICPProfile
 from app.models.intent_signal import IntentSignal
+from app.models.lead_qualification import LeadQualification
 from app.models.note import Note
 from app.models.provider_config import ProviderConfig
 from app.models.provider_usage import ProviderUsage
@@ -30,6 +31,7 @@ __all__ = [
     "AIGeneration",
     "ICPProfile",
     "IntentSignal",
+    "LeadQualification",
     "ProviderConfig",
     "ProviderUsage",
     "SearchBatch",

@@ -1,18 +1,20 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Briefcase, Building2, ExternalLink, EyeOff, Mail, MapPin, Phone, Sparkles } from "lucide-react";
+import { Briefcase, Building2, ExternalLink, Mail, MapPin, Phone, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { tierTone } from "@/components/leads/lead-table-columns";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
+import { Pill } from "@/components/ui/Pill";
 import {
   Select,
   SelectContent,
@@ -27,14 +29,13 @@ import {
   createLeadNote,
   createLeadTask,
   getLead,
-  getLeadScore,
   listLeadNotes,
   listLeadPersonalizations,
   listLeadTasks,
   personalizeLead,
-  revealLead,
   updateLeadStatus,
   updateLeadTask,
+  type Contact,
   type LeadStatus,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
@@ -66,12 +67,6 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
   const leadQuery = useQuery({
     queryKey: ["lead", workspaceId, contactId],
     queryFn: () => getLead(workspaceId!, contactId),
-    enabled: !!workspaceId,
-  });
-
-  const leadScoreQuery = useQuery({
-    queryKey: ["lead-score", workspaceId, contactId],
-    queryFn: () => getLeadScore(workspaceId!, contactId),
     enabled: !!workspaceId,
   });
 
@@ -109,17 +104,6 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
       toast.success("Draft generated");
     },
     onError: (error) => toast.error(getErrorMessage(error, "Draft generation failed.")),
-  });
-
-  const revealMutation = useMutation({
-    mutationFn: () => revealLead(workspaceId!, contactId),
-    onSuccess: (result) => {
-      queryClient.setQueryData(["lead", workspaceId, contactId], result.contact);
-      toast[result.revealed ? "success" : "info"](
-        result.revealed ? "Details revealed" : "Nothing new to reveal for this lead"
-      );
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
   });
 
   const noteMutation = useMutation({
@@ -205,11 +189,27 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
         </div>
       </div>
 
-      <StatCard
-        label="Lead score"
-        value={leadScoreQuery.data ? `${leadScoreQuery.data.score}/100` : <Skeleton className="h-8 w-16" />}
-        hint={leadScoreQuery.data?.breakdown.join(" · ") || "Fit + intent + authority + reachability + engagement"}
-      />
+      {lead.latest_qualification ? (
+        <StatCard
+          label="AI Qualification"
+          value={
+            <span className="flex items-center gap-2">
+              <Pill tone={tierTone[lead.latest_qualification.tier] ?? "muted"}>
+                Tier {lead.latest_qualification.tier}
+              </Pill>
+              <span>{Math.round(lead.latest_qualification.composite_score)}/100</span>
+            </span>
+          }
+          hint={`Confidence ${lead.latest_qualification.confidence}% · need + capacity + timing + reachability`}
+        />
+      ) : (
+        <Card className="flex items-center gap-3 p-4">
+          <div>
+            <p className="text-sm font-medium text-fg">AI Qualification</p>
+            <p className="text-sm text-fgMuted">Not scored yet — need + capacity + timing + reachability</p>
+          </div>
+        </Card>
+      )}
 
       <Tabs defaultValue="overview">
         <TabsList>
@@ -224,24 +224,7 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
               <div className="flex flex-col gap-2.5 text-sm">
                 <div className="flex items-center gap-2.5">
                   <Mail className="h-3.5 w-3.5 shrink-0 text-fgSubtle" />
-                  {lead.email ? (
-                    <span className="text-fg">{lead.email}</span>
-                  ) : lead.revealable ? (
-                    <>
-                      <span className="text-fgMuted">Hidden</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={revealMutation.isPending}
-                        onClick={() => revealMutation.mutate()}
-                      >
-                        <EyeOff className="h-3 w-3" />
-                        Reveal
-                      </Button>
-                    </>
-                  ) : (
-                    <span className="text-fgMuted">—</span>
-                  )}
+                  <span className={lead.email ? "text-fg" : "text-fgMuted"}>{lead.email ?? "—"}</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Phone className="h-3.5 w-3.5 shrink-0 text-fgSubtle" />

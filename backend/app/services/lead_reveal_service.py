@@ -9,6 +9,7 @@ PersonDiscoveryProvider.reveal's default "not supported" behavior).
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +27,18 @@ from app.utils.logging import get_logger
 logger = get_logger(__name__)
 
 # Only providers whose search step can mask results need a reveal call.
-_REVEALABLE_PROVIDERS = ("apollo",)
+_REVEALABLE_PROVIDERS = ("apollo", "smartlead")
+
+# Providers auto-revealed right after search, with no manual button.
+_AUTO_REVEAL_PROVIDERS = ("apollo", "smartlead")
+
+
+@dataclass(frozen=True, slots=True)
+class RevealManyResult:
+    revealed: int
+    skipped: int
+    failed: int
+    total: int
 
 
 class LeadRevealService:
@@ -88,7 +100,7 @@ class LeadRevealService:
                 operation="reveal",
                 workspace_id=workspace_id,
             ) as usage:
-                revealed = await provider.reveal(source.external_id)
+                revealed = await provider.reveal(source.external_id, raw_reference=source.raw_reference)
                 usage.records_returned = 1 if revealed else 0
         except ProviderUnavailableError as exc:
             logger.warning("lead_reveal_provider_unavailable", provider=source.provider, error=str(exc))
@@ -112,8 +124,9 @@ class LeadRevealService:
                 **contact.field_provenance,
                 "email": {"provider": source.provider, "revealed": True},
             }
-        if revealed.get("phone"):
-            contact.phone = revealed["phone"]
+        # Phone is deliberately never stored from reveal right now, per
+        # explicit instruction — not needed yet, so we don't persist it
+        # even though the same reveal call already returned it.
         if revealed.get("last_name") and not contact.last_name:
             contact.last_name = revealed["last_name"]
         if revealed.get("full_name"):
@@ -155,6 +168,34 @@ class LeadRevealService:
         # last_name/phone with no email is not the success the UI's
         # "Details revealed" message implies.
         return refreshed, email_found
+
+    async def reveal_many(
+        self, *, workspace_id: uuid.UUID, contacts: list[Contact], provider: str
+    ) -> RevealManyResult:
+        """Reveals every not-yet-revealed, revealable contact sourced from
+        `provider` (only Apollo is auto-revealed right now — see
+        _AUTO_REVEAL_PROVIDERS). Reuses reveal()'s own guards (already has
+        email, already attempted) to skip safely, so calling this
+        repeatedly across searches never re-bills a contact."""
+        revealed = skipped = failed = 0
+        for contact in contacts:
+            sourced_from_provider = any(source.provider == provider for source in contact.sources)
+            if not sourced_from_provider:
+                continue  # not this provider's contact at all — not this call's job, don't count it
+            if contact.email or contact.email_reveal_attempted or not contact.revealable:
+                skipped += 1
+                continue
+            try:
+                _, got_email = await self.reveal(workspace_id=workspace_id, contact_id=contact.id)
+                if got_email:
+                    revealed += 1
+                else:
+                    skipped += 1
+            except (HTTPException, ProviderUnavailableError) as exc:
+                logger.warning("reveal_many_lead_failed", contact_id=str(contact.id), error=str(exc))
+                failed += 1
+
+        return RevealManyResult(revealed=revealed, skipped=skipped, failed=failed, total=len(contacts))
 
     @staticmethod
     def _fill_company_fields(company: Company, org: dict) -> None:

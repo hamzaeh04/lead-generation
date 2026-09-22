@@ -22,6 +22,22 @@ export const statusOptions: { value: LeadStatus | "all"; label: string }[] = [
 
 export const bulkTargetStatuses: LeadStatus[] = ["ready_for_outreach", "contacted", "interested", "lost"];
 
+export const tierTone: Record<string, "success" | "accent" | "warning" | "danger" | "muted"> = {
+  A: "success",
+  B: "accent",
+  C: "warning",
+  D: "muted",
+  E: "danger",
+};
+
+function GradeCell({ contact }: { contact: Contact }) {
+  const qualification = contact.latest_qualification;
+  if (!qualification) {
+    return <span className="text-fgSubtle">—</span>;
+  }
+  return <Pill tone={tierTone[qualification.tier] ?? "muted"}>Tier {qualification.tier}</Pill>;
+}
+
 export const statusTone: Record<string, "success" | "warning" | "danger" | "accent" | "muted"> = {
   won: "success",
   meeting: "success",
@@ -50,6 +66,24 @@ export const leadColumns: ColumnDef<Contact, unknown>[] = [
         {row.original.full_name ?? row.original.email ?? "Unnamed contact"}
       </Link>
     ),
+  },
+  {
+    id: "grade",
+    header: "Grade",
+    cell: ({ row }) => <GradeCell contact={row.original} />,
+  },
+  {
+    id: "score",
+    header: "Score",
+    cell: ({ row }) => {
+      const qualification = row.original.latest_qualification;
+      if (!qualification) return <span className="text-fgSubtle">—</span>;
+      return (
+        <span className="font-mono text-fg" title={`Confidence ${qualification.confidence}%`}>
+          {Math.round(qualification.composite_score)}
+        </span>
+      );
+    },
   },
   {
     accessorKey: "company_name",

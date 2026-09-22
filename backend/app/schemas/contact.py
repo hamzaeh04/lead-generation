@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from app.models.contact import LeadStatus
+from app.schemas.lead_qualification import LeadQualificationSummary
 
 
 class ContactSourceRead(BaseModel):
@@ -45,6 +46,7 @@ class ContactRead(BaseModel):
     status: LeadStatus
     field_provenance: dict[str, Any]
     revealable: bool
+    latest_qualification: LeadQualificationSummary | None
     first_seen: datetime
     last_seen: datetime
 

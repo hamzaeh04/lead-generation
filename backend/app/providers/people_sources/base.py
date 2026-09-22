@@ -20,13 +20,15 @@ class PersonDiscoveryProvider(BaseProvider):
         """Company -> decision-makers lookup (e.g. Apollo org employees filtered by title)."""
         raise NotImplementedError
 
-    async def reveal(self, external_id: str) -> dict | None:
-        """Enriches a masked search result (e.g. Apollo's) into real contact
-        details — email, phone, full name. Not every provider masks its
-        search results (Smartlead's SmartProspect returns real data
-        directly), so this isn't abstract: the default signals "not
-        supported" via the same ProviderUnavailableError convention used
-        throughout this codebase, letting callers treat it as a normal
-        skip rather than a crash. Returns None (not an error) when the
-        provider supports reveal but found nothing for this id."""
+    async def reveal(self, external_id: str, *, raw_reference: dict | None = None) -> dict | None:
+        """Enriches a masked search result (Apollo, Smartlead) into real
+        contact details — email, phone, full name. `raw_reference` is the
+        ContactSource's stored raw payload from the original search hit;
+        Smartlead's unlock call needs the `filter_id` that was captured in
+        there (see smartlead_provider.py), Apollo ignores it. Not every
+        provider supports this, so it isn't abstract: the default signals
+        "not supported" via the same ProviderUnavailableError convention
+        used throughout this codebase, letting callers treat it as a
+        normal skip rather than a crash. Returns None (not an error) when
+        the provider supports reveal but found nothing for this id."""
         raise ProviderUnavailableError(f"{self.name}: reveal is not supported by this provider")

@@ -355,3 +355,88 @@ async def test_smartprospect_strips_locked_placeholder_email_and_linkedin():
     # A genuinely unlocked result must be unaffected
     assert unlocked.email == "real.person@example.com"
     assert unlocked.linkedin_url == "https://linkedin.com/in/realperson"
+
+
+@pytest.mark.asyncio
+async def test_reveal_requires_filter_id_from_raw_reference():
+    provider = SmartleadPersonDiscoveryProvider(
+        api_key="test-key", client=_client_with({}), prospect_client=_prospect_client_with({})
+    )
+
+    with pytest.raises(ProviderUnavailableError):
+        await provider.reveal("lead-1", raw_reference={"id": "lead-1"})  # no _smartlead_filter_id
+
+    with pytest.raises(ProviderUnavailableError):
+        await provider.reveal("lead-1", raw_reference=None)
+
+
+@pytest.mark.asyncio
+async def test_reveal_calls_fetch_contacts_with_filter_id_and_maps_response():
+    captured = {}
+
+    def on_request(request):
+        captured["path"] = request.url.path
+        captured["params"] = dict(request.url.params)
+        import json
+
+        captured["body"] = json.loads(request.content)
+
+    payload = {
+        "success": True,
+        "data": {
+            "list": [
+                {
+                    "id": "5a2ba2f8711eb336a3f213d8",
+                    "firstName": "Adam",
+                    "lastName": "Lewis",
+                    "fullName": "Adam Lewis",
+                    "title": "Vice President",
+                    "company": {"name": "Marcus & Millichap"},
+                    "department": ["Other"],
+                    "level": "VP-Level",
+                    "country": "United States",
+                    "state": "Florida",
+                    "city": "Venice",
+                    "email": "adam.lewis@marcusmillichap.example",
+                    "linkedin": "linkedin.com/in/adamlewis",
+                    "status": "active",
+                    "verificationStatus": "verified",
+                    "catchAllStatus": "not_catch_all",
+                }
+            ],
+        },
+    }
+    provider = SmartleadPersonDiscoveryProvider(
+        api_key="test-key", client=_client_with({}), prospect_client=_prospect_client_with(payload, on_request=on_request)
+    )
+
+    result = await provider.reveal(
+        "5a2ba2f8711eb336a3f213d8", raw_reference={"_smartlead_filter_id": 7662385}
+    )
+
+    assert captured["path"] == "/api/v1/search-email-leads/fetch-contacts"
+    assert captured["params"]["api_key"] == "test-key"
+    assert captured["body"]["filter_id"] == 7662385
+    assert captured["body"]["id"] == ["5a2ba2f8711eb336a3f213d8"]
+
+    assert result is not None
+    assert result["email"] == "adam.lewis@marcusmillichap.example"
+    assert result["email_status"] == "verified"
+    assert result["linkedin_url"] == "https://linkedin.com/in/adamlewis"
+    assert result["city"] == "Venice"
+    assert result["state"] == "Florida"
+    assert result["seniority"] == "VP-Level"
+    assert result["department"] == "Other"
+    assert result["full_name"] == "Adam Lewis"
+
+
+@pytest.mark.asyncio
+async def test_reveal_returns_none_when_fetch_contacts_finds_nothing():
+    payload = {"success": True, "data": {"list": []}}
+    provider = SmartleadPersonDiscoveryProvider(
+        api_key="test-key", client=_client_with({}), prospect_client=_prospect_client_with(payload)
+    )
+
+    result = await provider.reveal("missing-id", raw_reference={"_smartlead_filter_id": 123})
+
+    assert result is None

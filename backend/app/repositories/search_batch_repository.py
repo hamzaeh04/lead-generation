@@ -74,7 +74,7 @@ class SearchBatchRepository:
             select(Contact)
             .join(SearchBatchContact, SearchBatchContact.contact_id == Contact.id)
             .where(SearchBatchContact.batch_id == batch_id)
-            .options(selectinload(Contact.company))
+            .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
             .order_by(Contact.created_at.desc())
         )
         return list(result.scalars().unique().all())

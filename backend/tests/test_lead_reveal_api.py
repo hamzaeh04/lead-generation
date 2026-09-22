@@ -11,7 +11,7 @@ class _StubRevealProvider:
     def __init__(self, result: dict | None):
         self._result = result
 
-    async def reveal(self, external_id: str) -> dict | None:
+    async def reveal(self, external_id: str, *, raw_reference: dict | None = None) -> dict | None:
         return self._result
 
 
@@ -146,7 +146,58 @@ async def test_reveal_updates_contact_and_returns_revealed_true(client, db_sessi
     assert body["contact"]["email"] == "jordan@acme.example"
     assert body["contact"]["last_name"] == "Alvarez"
     assert body["contact"]["full_name"] == "Jordan Alvarez"
-    assert body["contact"]["phone"] == "+15550100001"
+    # Phone is deliberately never stored from reveal, even though the
+    # provider returned one — see LeadRevealService.reveal().
+    assert body["contact"]["phone"] is None
+
+
+async def test_reveal_works_for_smartlead_source_with_filter_id(
+    client, db_session, unique_email, monkeypatch
+):
+    """End-to-end: Smartlead is now a revealable provider too (via the
+    fetch-contacts unlock endpoint), not just Apollo."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    contact = Contact(workspace_id=uuid.UUID(workspace_id), first_name="Locked", full_name="Locked Lead")
+    db_session.add(contact)
+    await db_session.flush()
+    from app.repositories.contact_repository import ContactRepository
+
+    ContactRepository(db_session).add_source(
+        contact=contact,
+        provider="smartlead",
+        external_id="smartlead-lead-1",
+        source_url=None,
+        source_type="api",
+        raw_reference={"_smartlead_filter_id": 7662385},
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.lead_reveal_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubRevealProvider(
+            {
+                "first_name": "Locked",
+                "last_name": "Lead",
+                "full_name": "Locked Lead",
+                "email": "locked.lead@example.com",
+                "email_status": "verified",
+                "phone": None,
+                "linkedin_url": "https://linkedin.com/in/lockedlead",
+            }
+        ),
+    )
+
+    response = await client.post(
+        f"/api/v1/leads/{contact.id}/reveal", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revealed"] is True
+    assert body["contact"]["email"] == "locked.lead@example.com"
+    assert body["contact"]["email_status"] == "verified"
+    assert body["contact"]["linkedin_url"] == "https://linkedin.com/in/lockedlead"
 
 
 async def test_reveal_returns_revealed_false_when_provider_finds_nothing(
@@ -298,6 +349,33 @@ async def test_get_lead_revealable_reflects_source_provider(client, db_session, 
 
     assert apollo_response.json()["revealable"] is True
     assert smartlead_response.json()["revealable"] is False
+
+
+async def test_get_lead_revealable_true_for_smartlead_with_filter_id(client, db_session, unique_email):
+    """A Smartlead-sourced contact IS revealable once its source carries
+    the filter_id its unlock call needs (captured at search time for any
+    result found after this feature shipped)."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    contact = Contact(workspace_id=uuid.UUID(workspace_id), first_name="Locked", full_name="Locked Lead")
+    db_session.add(contact)
+    await db_session.flush()
+    from app.repositories.contact_repository import ContactRepository
+
+    ContactRepository(db_session).add_source(
+        contact=contact,
+        provider="smartlead",
+        external_id="smartlead-lead-1",
+        source_url=None,
+        source_type="api",
+        raw_reference={"_smartlead_filter_id": 7662385},
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/leads/{contact.id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert response.json()["revealable"] is True
 
 
 async def test_reveal_404_when_contact_has_no_revealable_source(client, db_session, unique_email):

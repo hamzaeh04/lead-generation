@@ -25,3 +25,10 @@ class SearchBatchRead(BaseModel):
 
 class SearchBatchDetail(SearchBatchRead):
     contacts: list[ContactRead]
+
+
+class BatchQualifyResponse(BaseModel):
+    qualified: int
+    skipped: int
+    failed: int
+    total: int

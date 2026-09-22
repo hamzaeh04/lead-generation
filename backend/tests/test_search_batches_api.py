@@ -224,3 +224,137 @@ async def test_zero_result_search_creates_no_batch(client, db_session, unique_em
         "/api/v1/search-batches", params={"workspace_id": workspace_id}, headers=headers
     )
     assert batches.json() == []
+
+
+async def test_search_execute_auto_qualifies_new_leads(client, db_session, unique_email, monkeypatch):
+    """Regression test: leads must be scored automatically as part of the
+    search response, not left for a separate manual step."""
+    import json
+
+    from app.providers.ai.base import AIGenerationRequest, AIGenerationResult
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    db_session.add(
+        ProviderConfig(
+            provider="stub", category=ProviderCategory.PERSON_DISCOVERY, enabled=True, priority=1
+        )
+    )
+    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    await db_session.commit()
+
+    ai_response = {
+        "composite_score": 70,
+        "confidence": 80,
+        "tier": "B",
+        "tier_rationale": "Strong reachability signal.",
+        "dimensions": {},
+        "evidence": [],
+        "overrides_triggered": [],
+        "disqualifier": None,
+        "missing_data": [],
+    }
+
+    class _StubAIProvider:
+        async def generate(self, request: AIGenerationRequest) -> AIGenerationResult:
+            return AIGenerationResult(
+                text=json.dumps(ai_response), model="stub-model", prompt_version=request.prompt_version,
+                source_fields_used=list(request.source_fields.keys()),
+            )
+
+    def _build_provider(provider_name, category, settings):
+        return _StubAIProvider() if provider_name == "groq" else _StubPersonDiscoveryProvider()
+
+    # search_service and lead_qualification_service both `from app.services
+    # import provider_factory` — same module object either way, so one
+    # patch (dispatching on provider_name) covers both call sites.
+    monkeypatch.setattr("app.services.provider_factory.build_provider", _build_provider)
+    monkeypatch.setattr("app.services.lead_qualification_service._BATCH_PACING_SECONDS", 0)
+
+    response = await client.post(
+        "/api/v1/search/execute",
+        json={
+            "workspace_id": workspace_id,
+            "provider": "stub",
+            "category": "person_discovery",
+            "criteria": {"job_titles": ["VP of Sales"]},
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["contacts"]) == 1
+    qualification = body["contacts"][0]["latest_qualification"]
+    assert qualification is not None
+    assert qualification["tier"] == "B"
+    assert qualification["composite_score"] == 70
+
+
+async def test_search_execute_auto_reveals_apollo_leads_but_not_phone(
+    client, db_session, unique_email, monkeypatch
+):
+    """Regression test: Apollo leads must come back unmasked automatically
+    (no manual Reveal button anymore), but phone must never be stored per
+    explicit instruction even though the provider returns one."""
+
+    class _StubApolloDiscoveryProvider(_StubPersonDiscoveryProvider):
+        name = "apollo"
+
+        async def discover_people(self, criteria: DiscoveryCriteria) -> list[NormalizedContact]:
+            return [
+                NormalizedContact(
+                    metadata=ProviderMetadata(provider="apollo", external_id="apollo-1"),
+                    first_name="Jane",
+                    full_name="Jane",
+                    job_title="VP of Sales",
+                    company_name="Acme Inc",
+                    company_domain="acme.example",
+                )
+            ]
+
+        async def reveal(self, external_id: str, *, raw_reference=None) -> dict | None:
+            return {
+                "first_name": "Jane",
+                "last_name": "Doe",
+                "full_name": "Jane Doe",
+                "email": "jane@acme.example",
+                "phone": "+15550100099",
+                "email_status": "verified",
+                "linkedin_url": "https://linkedin.com/in/janedoe",
+                "city": None,
+                "state": None,
+                "country": None,
+                "seniority": None,
+                "department": None,
+                "organization": None,
+            }
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    db_session.add(
+        ProviderConfig(provider="apollo", category=ProviderCategory.PERSON_DISCOVERY, enabled=True, priority=1)
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubApolloDiscoveryProvider(),
+    )
+
+    response = await client.post(
+        "/api/v1/search/execute",
+        json={
+            "workspace_id": workspace_id,
+            "provider": "apollo",
+            "category": "person_discovery",
+            "criteria": {"job_titles": ["VP of Sales"]},
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    contact = response.json()["contacts"][0]
+    assert contact["email"] == "jane@acme.example"
+    assert contact["linkedin_url"] == "https://linkedin.com/in/janedoe"
+    assert contact["email_status"] == "verified"
+    assert contact["phone"] is None

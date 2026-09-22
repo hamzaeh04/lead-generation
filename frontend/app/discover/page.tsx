@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check, EyeOff, Search, Sparkles, Zap } from "lucide-react";
+import { Check, Search, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -15,7 +15,6 @@ import { StatCard } from "@/components/ui/StatCard";
 import { cn } from "@/lib/cn";
 import { type Contact, type DiscoveryCriteria, executeSearch, listProviders } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
-import { revealLead } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 
 const PROVIDER_INFO: Record<string, { label: string; description: string; badgeClass: string; icon: typeof Zap }> = {
@@ -75,58 +74,22 @@ function ProviderCard({
   );
 }
 
-function ContactResultRow({
-  contact,
-  workspaceId,
-  provider,
-}: {
-  contact: Contact;
-  workspaceId: string;
-  provider: string;
-}) {
-  const [revealed, setRevealed] = useState<Contact>(contact);
-
-  const revealMutation = useMutation({
-    mutationFn: () => revealLead(workspaceId, contact.id),
-    onSuccess: (result) => {
-      setRevealed(result.contact);
-      toast[result.revealed ? "success" : "info"](
-        result.revealed ? "Details revealed" : "Nothing new to reveal for this lead"
-      );
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
-  });
-
+function ContactResultRow({ contact }: { contact: Contact }) {
   return (
     <div className="flex items-center justify-between px-4 py-3">
-      <Link href={`/leads/${revealed.id}`} className="min-w-0 flex-1 hover:text-accent">
+      <Link href={`/leads/${contact.id}`} className="min-w-0 flex-1 hover:text-accent">
         <span className="block truncate text-base font-medium text-fg">
-          {revealed.full_name ?? revealed.email ?? "Unnamed contact"}
+          {contact.full_name ?? contact.email ?? "Unnamed contact"}
         </span>
         <span className="block truncate text-sm text-fgMuted">
-          {revealed.job_title ?? "—"}
-          {revealed.company_name ? ` at ${revealed.company_name}` : ""}
-          {revealed.city || revealed.state
-            ? ` · ${[revealed.city, revealed.state].filter(Boolean).join(", ")}`
+          {contact.job_title ?? "—"}
+          {contact.company_name ? ` at ${contact.company_name}` : ""}
+          {contact.city || contact.state
+            ? ` · ${[contact.city, contact.state].filter(Boolean).join(", ")}`
             : ""}
         </span>
       </Link>
-      {revealed.email ? (
-        <span className="ml-3 shrink-0 text-sm text-fgMuted">{revealed.email}</span>
-      ) : provider === "apollo" ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-3 shrink-0"
-          loading={revealMutation.isPending}
-          onClick={() => revealMutation.mutate()}
-        >
-          <EyeOff className="h-3 w-3" />
-          Reveal
-        </Button>
-      ) : (
-        <span className="ml-3 shrink-0 text-sm text-fgMuted">—</span>
-      )}
+      <span className="ml-3 shrink-0 text-sm text-fgMuted">{contact.email ?? "—"}</span>
     </div>
   );
 }
@@ -250,22 +213,10 @@ function DiscoverContent() {
 
               {results.contacts.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <h3 className="text-sm font-semibold text-fgMuted">
-                    Contacts
-                    {selectedProvider === "apollo" && (
-                      <span className="ml-2 font-normal text-fgSubtle">
-                        — emails are hidden until revealed (spends an Apollo credit)
-                      </span>
-                    )}
-                  </h3>
+                  <h3 className="text-sm font-semibold text-fgMuted">Contacts</h3>
                   <Card className="flex flex-col divide-y divide-border p-0">
                     {results.contacts.map((contact) => (
-                      <ContactResultRow
-                        key={contact.id}
-                        contact={contact}
-                        workspaceId={workspaceId!}
-                        provider={selectedProvider}
-                      />
+                      <ContactResultRow key={contact.id} contact={contact} />
                     ))}
                   </Card>
                 </div>

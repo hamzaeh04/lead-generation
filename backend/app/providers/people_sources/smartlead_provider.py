@@ -18,10 +18,14 @@
    "linkedin.com/random_data") on every locked record. _to_prospect_contact
    strips that placeholder back to None so it's never stored as if real,
    and so two different locked people don't collide on the same fake email
-   during contact dedup. There is no documented API endpoint to unlock a
-   masked result (unlocking is dashboard-only), so unlike Apollo this
-   provider has no reveal() override — masked leads stay masked until
-   someone unlocks them in Smartlead's own UI.
+   during contact dedup.
+3. Unlock (added Sep 2026, endpoint details from Smartlead support — NOT
+   in their public docs): POST prospect-api.smartlead.ai's
+   /api/v1/search-email-leads/fetch-contacts, scoped by the `filter_id`
+   a search-contacts call returned (captured onto each contact's
+   raw_reference at search time — see _to_prospect_contact). This is
+   what reveal() calls; a contact whose source predates filter_id
+   capture can't be unlocked (ProviderUnavailableError).
 
 Auth for both modes is a query-param `api_key`, not a header — unlike every
 other provider in this codebase.
@@ -179,6 +183,57 @@ class SmartleadPersonDiscoveryProvider(PersonDiscoveryProvider):
             "smartlead: decision-maker lookup by company domain is not supported — "
             "use SmartProspect search (company + title filters) instead"
         )
+
+    async def reveal(self, external_id: str, *, raw_reference: dict | None = None) -> dict | None:
+        """Unlocks one masked SmartProspect result. `filter_id` scopes the
+        unlock to the search that found this contact and must have been
+        captured onto its source's raw_reference at search time — without
+        it there's nothing to scope the call to."""
+        filter_id = (raw_reference or {}).get("_smartlead_filter_id")
+        if filter_id is None:
+            raise ProviderUnavailableError(
+                "smartlead: no filter_id on this lead's source — it was found before "
+                "reveal support was added, so it can't be unlocked"
+            )
+
+        payload = await request_json(
+            self._prospect_client,
+            "POST",
+            "/api/v1/search-email-leads/fetch-contacts",
+            provider=self.name,
+            params={"api_key": self._api_key},
+            json={"filter_id": filter_id, "id": [external_id], "visual_limit": 1},
+        )
+        data = payload.get("data") or {}
+        leads = data.get("list") or []
+        if not leads:
+            return None
+        lead = leads[0]
+
+        email = self._unmask(lead.get("email"), _MASKED_EMAIL)
+        linkedin = self._unmask(lead.get("linkedin"), _MASKED_LINKEDIN)
+        first_name = lead.get("firstName")
+        last_name = lead.get("lastName")
+        departments = lead.get("department")
+        return {
+            "first_name": first_name,
+            "last_name": last_name,
+            "full_name": lead.get("fullName") or " ".join(p for p in (first_name, last_name) if p) or None,
+            "email": email,
+            "email_status": lead.get("verificationStatus") or lead.get("catchAllStatus"),
+            # Phone isn't in this response even with phone_enrichment=true —
+            # Smartlead fills it in asynchronously after unlock and it only
+            # ever shows up in their own "Found Leads" dashboard view, not
+            # via this API, so we never request or wait on it here.
+            "phone": None,
+            "linkedin_url": self._linkedin_url(linkedin),
+            "city": lead.get("city") or None,
+            "state": lead.get("state") or None,
+            "country": lead.get("country") or None,
+            "seniority": lead.get("level"),
+            "department": departments[0] if isinstance(departments, list) and departments else None,
+            "organization": None,
+        }
 
     def _to_campaign_contact(self, lead: dict) -> NormalizedContact:
         first_name = lead.get("first_name")

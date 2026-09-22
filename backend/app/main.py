@@ -22,6 +22,7 @@ from app.api.v1.social import router as social_router
 from app.api.v1.suppressions import router as suppressions_router
 from app.api.v1.tags import router as tags_router
 from app.api.v1.webhooks import router as webhooks_router
+from app.api.v1.workspace_api_keys import router as workspace_api_keys_router
 from app.api.v1.workspaces import router as workspaces_router
 from app.core.config import get_settings
 from app.middleware.request_context import RequestContextMiddleware
@@ -74,6 +75,7 @@ app.include_router(social_router, prefix=settings.API_V1_PREFIX)
 app.include_router(campaigns_router, prefix=settings.API_V1_PREFIX)
 app.include_router(suppressions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(email_setups_router, prefix=settings.API_V1_PREFIX)
+app.include_router(workspace_api_keys_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tags_router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
 app.include_router(webhooks_router, prefix=settings.API_V1_PREFIX)

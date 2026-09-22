@@ -17,6 +17,7 @@ from app.models.tag import LeadTag, Tag
 from app.models.task import Task
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember, WorkspacePlan, WorkspaceRole
+from app.models.workspace_api_keys import WorkspaceApiKeys
 
 __all__ = [
     "ActorConfig",
@@ -25,6 +26,7 @@ __all__ = [
     "WorkspaceMember",
     "WorkspaceRole",
     "WorkspacePlan",
+    "WorkspaceApiKeys",
     "Company",
     "CompanySource",
     "Contact",

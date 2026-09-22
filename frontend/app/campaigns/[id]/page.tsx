@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -53,6 +53,7 @@ import {
   enrollBatches,
   getCampaign,
   getCampaignReport,
+  listEmailSetups,
   listLeads,
   listSearchBatches,
   pauseCampaign,
@@ -417,53 +418,123 @@ function StepCard({
   );
 }
 
-function StepsSection({ campaign, workspaceId }: { campaign: Campaign; workspaceId: string }) {
-  const sortedSteps = useMemo(() => [...campaign.steps].sort((a, b) => a.step_number - b.step_number), [campaign.steps]);
-  const nextStepNumber = campaign.steps.length + 1;
+const DEFAULT_SUBJECT = "{{first_name}}, quick question";
+const DEFAULT_BODY = "Hi {{first_name}},\n\nI wanted to reach out about {{company_name}}.\n\nBest regards";
+
+function StepsSection({
+  campaign,
+  workspaceId,
+  subject,
+  body,
+  onSubjectChange,
+  onBodyChange,
+}: {
+  campaign: Campaign;
+  workspaceId: string;
+  subject: string;
+  body: string;
+  onSubjectChange: (value: string) => void;
+  onBodyChange: (value: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const sortedSteps = useMemo(
+    () => [...campaign.steps].sort((a, b) => a.step_number - b.step_number),
+    [campaign.steps]
+  );
+  const nextStepNumber = Math.max(0, ...campaign.steps.map((s) => s.step_number)) + 1;
+  const stepOne = sortedSteps.find((s) => s.step_number === 1) ?? sortedSteps[0] ?? null;
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (stepOne) {
+        return updateCampaignStep(workspaceId, campaign.id, stepOne.id, {
+          subject: subject.trim(),
+          body: body.trim(),
+        });
+      }
+      return addCampaignStep(workspaceId, campaign.id, {
+        step_number: 1,
+        delay_days: 0,
+        subject: subject.trim(),
+        body: body.trim(),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceId, campaign.id] });
+      toast.success(stepOne ? "Email content saved" : "Step 1 created");
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
 
   return (
     <Card className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-fg">Sequence steps</h2>
-        <AddStepDialog campaignId={campaign.id} workspaceId={workspaceId} nextStepNumber={nextStepNumber} />
-      </div>
-      {sortedSteps.length > 0 ? (
-        <div className="flex flex-col divide-y divide-border">
-          {sortedSteps.map((step, i) => (
-            <StepCard
-              key={step.id}
-              step={step}
-              campaign={campaign}
-              workspaceId={workspaceId}
-              isFirst={i === 0}
-              isLast={i === sortedSteps.length - 1}
-            />
-          ))}
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold text-fg">Sequence steps</h2>
+          <p className="mt-1 text-sm text-fgMuted">
+            Subject and body below are sent with enroll — use {"{{first_name}}"} and{" "}
+            {"{{company_name}}"} for personalization.
+          </p>
         </div>
-      ) : (
-        <p className="text-sm text-fgMuted">No steps yet.</p>
+        {campaign.steps.length > 0 && (
+          <AddStepDialog campaignId={campaign.id} workspaceId={workspaceId} nextStepNumber={nextStepNumber} />
+        )}
+      </div>
+
+      <Field label="Subject" htmlFor="sequence_subject" hint="Included in the enroll payload and used for the first send.">
+        <Input
+          id="sequence_subject"
+          required
+          value={subject}
+          onChange={(e) => onSubjectChange(e.target.value)}
+          placeholder={DEFAULT_SUBJECT}
+        />
+      </Field>
+
+      <Field label="Email body" htmlFor="sequence_body">
+        <Textarea
+          id="sequence_body"
+          required
+          rows={8}
+          value={body}
+          onChange={(e) => onBodyChange(e.target.value)}
+          placeholder={DEFAULT_BODY}
+        />
+      </Field>
+
+      <Button
+        type="button"
+        variant="ghost"
+        className="self-start"
+        loading={saveMutation.isPending}
+        disabled={!subject.trim() || !body.trim()}
+        onClick={() => saveMutation.mutate()}
+      >
+        Save email content
+      </Button>
+
+      {sortedSteps.length > 1 && (
+        <div className="mt-2 flex flex-col divide-y divide-border border-t border-border pt-2">
+          <p className="px-0 py-2 text-xs font-semibold uppercase tracking-wide text-fgSubtle">
+            Follow-up steps
+          </p>
+          {sortedSteps
+            .filter((step) => step.id !== stepOne?.id)
+            .map((step, i, arr) => (
+              <StepCard
+                key={step.id}
+                step={step}
+                campaign={campaign}
+                workspaceId={workspaceId}
+                isFirst={false}
+                isLast={i === arr.length - 1}
+              />
+            ))}
+        </div>
       )}
     </Card>
   );
 }
-
-const enrollColumns: ColumnDef<Contact, unknown>[] = [
-  {
-    accessorKey: "full_name",
-    header: "Name",
-    cell: ({ row }) => <span className="font-medium text-fg">{row.original.full_name ?? row.original.email ?? "Unnamed"}</span>,
-  },
-  {
-    accessorKey: "email",
-    header: "Email",
-    cell: ({ row }) => <span className="text-fgMuted">{row.original.email ?? "no email"}</span>,
-  },
-  {
-    accessorKey: "company_name",
-    header: "Company",
-    cell: ({ row }) => <span className="text-fgMuted">{row.original.company_name ?? "—"}</span>,
-  },
-];
 
 function batchLabel(batch: SearchBatch) {
   const seq = String(batch.sequence).padStart(2, "0");
@@ -471,16 +542,83 @@ function batchLabel(batch: SearchBatch) {
   return `Batch ${seq} · ${batch.provider} · ${contacts} contact${contacts === 1 ? "" : "s"}`;
 }
 
-function EnrollSection({ campaignId, workspaceId }: { campaignId: string; workspaceId: string }) {
+function SequenceTab({ campaign, workspaceId }: { campaign: Campaign; workspaceId: string }) {
+  const stepOne =
+    [...campaign.steps].sort((a, b) => a.step_number - b.step_number).find((s) => s.step_number === 1) ??
+    campaign.steps[0] ??
+    null;
+
+  const [subject, setSubject] = useState(stepOne?.subject ?? DEFAULT_SUBJECT);
+  const [body, setBody] = useState(stepOne?.body ?? DEFAULT_BODY);
+
+  useEffect(() => {
+    if (!stepOne) return;
+    setSubject(stepOne.subject);
+    setBody(stepOne.body);
+  }, [stepOne?.id, stepOne?.subject, stepOne?.body]);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <StepsSection
+        campaign={campaign}
+        workspaceId={workspaceId}
+        subject={subject}
+        body={body}
+        onSubjectChange={setSubject}
+        onBodyChange={setBody}
+      />
+      <EnrollSection
+        campaignId={campaign.id}
+        workspaceId={workspaceId}
+        campaignFromEmail={campaign.from_email}
+        subject={subject}
+        body={body}
+      />
+    </div>
+  );
+}
+
+function EnrollSection({
+  campaignId,
+  workspaceId,
+  campaignFromEmail,
+  subject,
+  body,
+}: {
+  campaignId: string;
+  workspaceId: string;
+  campaignFromEmail: string;
+  subject: string;
+  body: string;
+}) {
+  const queryClient = useQueryClient();
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
+  const [emailSetupId, setEmailSetupId] = useState("");
 
   const batchesQuery = useQuery({
     queryKey: ["search-batches", workspaceId],
     queryFn: () => listSearchBatches(workspaceId, { limit: 100 }),
   });
 
+  const setupsQuery = useQuery({
+    queryKey: ["email-setups"],
+    queryFn: () => listEmailSetups(),
+  });
+
   const batches = batchesQuery.data ?? [];
+  const setups = setupsQuery.data ?? [];
   const selectedCount = selectedBatchIds.size;
+  const selectedSetup = setups.find((s) => s.id === emailSetupId) ?? null;
+  const canSend = selectedCount > 0 && !!emailSetupId && !!subject.trim() && !!body.trim();
+
+  useEffect(() => {
+    if (emailSetupId || setups.length === 0) return;
+    const preferred =
+      setups.find((s) => s.smtp_email.toLowerCase() === campaignFromEmail.toLowerCase()) ??
+      setups.find((s) => s.is_default) ??
+      setups[0];
+    if (preferred) setEmailSetupId(preferred.id);
+  }, [setups, emailSetupId, campaignFromEmail]);
 
   function toggleBatch(batchId: string, checked: boolean) {
     setSelectedBatchIds((prev) => {
@@ -500,11 +638,18 @@ function EnrollSection({ campaignId, workspaceId }: { campaignId: string; worksp
   }
 
   const mutation = useMutation({
-    mutationFn: () => enrollBatches(workspaceId, campaignId, Array.from(selectedBatchIds)),
+    mutationFn: () =>
+      enrollBatches(workspaceId, campaignId, Array.from(selectedBatchIds), emailSetupId, {
+        subject: subject.trim(),
+        body: body.trim(),
+      }),
     onSuccess: (result) => {
       setSelectedBatchIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceId, campaignId] });
+      const sent = result.sent ?? 0;
+      const failed = result.failed ?? 0;
       toast.success(
-        `${result.enrolled} enrolled, ${result.already_enrolled} already enrolled, ${result.not_found} not found`
+        `${result.enrolled} enrolled · ${sent} sent · ${failed} failed · ${result.already_enrolled} already enrolled`
       );
     },
     onError: (error) => toast.error(getErrorMessage(error)),
@@ -515,10 +660,52 @@ function EnrollSection({ campaignId, workspaceId }: { campaignId: string; worksp
       <div>
         <h2 className="text-base font-semibold text-fg">Enroll contacts</h2>
         <p className="mt-1 text-sm text-fgMuted">
-          Select discovery batches — every contact in those batches is enrolled for this campaign&apos;s
-          sends.
+          Pick an SMTP account and batches. Enroll sends the Sequence subject and body from this
+          tab in the API payload.
         </p>
       </div>
+
+      <Field
+        label="Send from (Email Setup)"
+        hint="SMTP account used for this enroll-and-send."
+      >
+        <Select
+          value={emailSetupId || undefined}
+          onValueChange={setEmailSetupId}
+          disabled={setupsQuery.isLoading || setups.length === 0}
+        >
+          <SelectTrigger>
+            <SelectValue
+              placeholder={
+                setupsQuery.isLoading
+                  ? "Loading SMTP accounts…"
+                  : setups.length === 0
+                    ? "No Email Setup accounts — add one first"
+                    : "Select SMTP email"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {setups.map((setup) => (
+              <SelectItem key={setup.id} value={setup.id}>
+                {setup.name} — {setup.smtp_email}
+                {setup.is_default ? " (default)" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {selectedSetup && (
+        <p className="text-xs text-fgMuted">
+          Sending as <span className="font-medium text-fg">{selectedSetup.smtp_email}</span> via{" "}
+          {selectedSetup.smtp_host}:{selectedSetup.smtp_port}
+        </p>
+      )}
+
+      {(!subject.trim() || !body.trim()) && (
+        <p className="text-sm text-warning">Add a subject and email body in Sequence steps first.</p>
+      )}
 
       {batchesQuery.isLoading && (
         <div className="flex items-center gap-2 text-sm text-fgMuted">
@@ -568,7 +755,7 @@ function EnrollSection({ campaignId, workspaceId }: { campaignId: string; worksp
       )}
 
       <Button
-        disabled={selectedCount === 0}
+        disabled={!canSend}
         loading={mutation.isPending}
         onClick={() => mutation.mutate()}
         className="self-start"
@@ -761,10 +948,7 @@ function CampaignDetailContent({ campaignId }: { campaignId: string }) {
         </TabsList>
 
         <TabsContent value="sequence">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <StepsSection campaign={campaign} workspaceId={workspaceId} />
-            <EnrollSection campaignId={campaign.id} workspaceId={workspaceId} />
-          </div>
+          <SequenceTab campaign={campaign} workspaceId={workspaceId} />
         </TabsContent>
 
         <TabsContent value="preview">

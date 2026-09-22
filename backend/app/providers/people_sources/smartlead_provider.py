@@ -162,7 +162,15 @@ class SmartleadPersonDiscoveryProvider(PersonDiscoveryProvider):
         )
         data = payload.get("data") or {}
         leads = data.get("list") or []
-        return [self._to_prospect_contact(lead) for lead in leads[: criteria.limit]]
+        # filter_id scopes this exact search — Smartlead's support-confirmed
+        # (not yet documented) unlock flow uses it to reveal emails for
+        # specific contacts from the search. No unlock endpoint is wired up
+        # yet (its real URL/params are pending Smartlead support), but we
+        # keep filter_id on each contact's raw_reference now so it isn't
+        # lost — wiring reveal() in later needs only this value plus the
+        # contact's external_id, not a re-search.
+        filter_id = data.get("filter_id")
+        return [self._to_prospect_contact(lead, filter_id=filter_id) for lead in leads[: criteria.limit]]
 
     async def discover_decision_makers(
         self, company_domain: str, target_titles: list[str]
@@ -190,20 +198,21 @@ class SmartleadPersonDiscoveryProvider(PersonDiscoveryProvider):
             company_name=lead.get("company_name"),
         )
 
-    def _to_prospect_contact(self, lead: dict) -> NormalizedContact:
+    def _to_prospect_contact(self, lead: dict, *, filter_id: int | str | None = None) -> NormalizedContact:
         company = lead.get("company") or {}
         first_name = lead.get("firstName")
         last_name = lead.get("lastName")
         departments = lead.get("department")
         email = self._unmask(lead.get("email"), _MASKED_EMAIL)
         linkedin = self._unmask(lead.get("linkedin"), _MASKED_LINKEDIN)
+        raw_reference = {**lead, "_smartlead_filter_id": filter_id} if filter_id is not None else lead
         return NormalizedContact(
             metadata=ProviderMetadata(
                 provider=self.name,
                 external_id=str(lead["id"]) if lead.get("id") is not None else None,
                 source_url=self._linkedin_url(linkedin),
                 source_type="api",
-                raw_reference=lead,
+                raw_reference=raw_reference,
             ),
             first_name=first_name,
             last_name=last_name,

@@ -210,6 +210,9 @@ async def test_discover_people_without_campaign_id_hits_smartprospect():
     assert contact.industry == "Financial Services"
     assert contact.company_headcount == "1K - 10K"
     assert contact.company_revenue == "> $1B"
+    # filter_id isn't documented/unlockable via API yet, but must not be
+    # discarded — a future reveal() implementation needs it.
+    assert contact.metadata.raw_reference["_smartlead_filter_id"] == 327105
 
 
 @pytest.mark.asyncio

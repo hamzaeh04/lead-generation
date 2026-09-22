@@ -32,6 +32,7 @@ class ContactRead(BaseModel):
     department: str | None
     seniority: str | None
     email: str | None
+    email_status: str | None
     phone: str | None
     linkedin_url: str | None
     city: str | None

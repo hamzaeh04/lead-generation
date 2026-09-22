@@ -34,6 +34,8 @@ class CompanyRead(BaseModel):
     industry: str | None
     category: str | None
     employee_count: int | None
+    annual_revenue: float | None
+    founded_year: int | None
     description: str | None
     linkedin_url: str | None
     social_urls: dict[str, str]

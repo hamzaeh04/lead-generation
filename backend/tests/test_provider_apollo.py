@@ -146,8 +146,63 @@ async def test_reveal_maps_real_fields():
         "last_name": "Chen",
         "full_name": "Sam Chen",
         "email": "sam@sunshineroofing.example",
+        "email_status": None,
         "phone": "+15550100002",
+        "linkedin_url": None,
+        "city": None,
+        "state": None,
+        "country": None,
+        "seniority": None,
+        "department": None,
+        "organization": None,
     }
+
+
+async def test_reveal_maps_full_enrichment_including_organization():
+    payload = {
+        "person": {
+            "email": "larry@blackrock.example",
+            "first_name": "Larry",
+            "last_name": "Fink",
+            "name": "Larry Fink",
+            "email_status": "verified",
+            "linkedin_url": "http://www.linkedin.com/in/laurencefink",
+            "city": "New York",
+            "state": "New York",
+            "country": "United States",
+            "seniority": "c_suite",
+            "departments": ["c_suite"],
+            "organization": {
+                "industry": "financial services",
+                "estimated_num_employees": 27000,
+                "organization_revenue": 24216000000.0,
+                "founded_year": 1988,
+                "website_url": "blackrock.com",
+                "primary_phone": "+12125551000",
+                "linkedin_url": "http://www.linkedin.com/company/blackrock",
+                "city": "New York",
+                "state": "New York",
+                "country": "United States",
+            },
+        }
+    }
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with(payload))
+
+    result = await provider.reveal("person-3")
+
+    assert result is not None
+    assert result["email_status"] == "verified"
+    assert result["linkedin_url"] == "http://www.linkedin.com/in/laurencefink"
+    assert result["seniority"] == "c_suite"
+    assert result["department"] == "c_suite"
+    assert result["city"] == "New York"
+    org = result["organization"]
+    assert org["industry"] == "financial services"
+    assert org["employee_count"] == 27000
+    assert org["annual_revenue"] == 24216000000.0
+    assert org["founded_year"] == 1988
+    assert org["website"] == "blackrock.com"
+    assert org["phone"] == "+12125551000"
 
 
 async def test_reveal_filters_locked_email_placeholder():

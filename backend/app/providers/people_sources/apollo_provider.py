@@ -94,11 +94,18 @@ class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
         return [self._to_masked_contact(p) for p in people]
 
     async def reveal(self, person_id: str) -> dict | None:
-        """Enriches one masked search result into real contact details.
+        """Enriches one masked search result into full contact + company
+        details — Apollo's /people/match response includes far more than
+        email/phone (real location, seniority, department, deliverability
+        status, and a nested `organization` object with precise employee
+        count/revenue/founding year), and this returns all of it rather
+        than just the identity fields.
 
         Returns None (never an error) when Apollo has nothing to reveal —
         an empty match is a normal outcome, not a failure, same convention
-        as every other "nothing found" path in this codebase.
+        as every other "nothing found" path in this codebase. Once
+        `revealed_for_current_team` is true, Apollo does not re-bill this
+        call for the same person.
         """
         payload = await request_json(
             self._client,
@@ -119,12 +126,41 @@ class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
             # Apollo matched the id but revealed nothing new — treat the
             # same as no match rather than "successfully revealed nothing."
             return None
+
+        departments = person.get("departments")
+        org = person.get("organization")
         return {
             "first_name": first_name,
             "last_name": last_name,
             "full_name": person.get("name") or " ".join(p for p in (first_name, last_name) if p) or None,
             "email": email,
+            "email_status": person.get("email_status"),
             "phone": phone,
+            "linkedin_url": person.get("linkedin_url"),
+            "city": person.get("city"),
+            "state": person.get("state"),
+            "country": person.get("country"),
+            "seniority": person.get("seniority"),
+            "department": departments[0] if isinstance(departments, list) and departments else None,
+            "organization": self._org_enrichment(org) if isinstance(org, dict) else None,
+        }
+
+    @staticmethod
+    def _org_enrichment(org: dict) -> dict:
+        """Only the fields we actually persist onto Company — Apollo's
+        organization object has ~30 fields, most not worth a schema
+        column yet (sic/naics codes, social profiles, etc.)."""
+        return {
+            "industry": org.get("industry"),
+            "employee_count": org.get("estimated_num_employees"),
+            "annual_revenue": org.get("organization_revenue") or org.get("annual_revenue"),
+            "founded_year": org.get("founded_year"),
+            "website": org.get("website_url"),
+            "phone": org.get("phone") or org.get("primary_phone"),
+            "linkedin_url": org.get("linkedin_url"),
+            "city": org.get("city"),
+            "state": org.get("state"),
+            "country": org.get("country"),
         }
 
     def _search_body(self, criteria: DiscoveryCriteria) -> dict:

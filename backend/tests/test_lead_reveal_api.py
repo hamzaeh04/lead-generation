@@ -55,6 +55,76 @@ async def _make_apollo_sourced_contact(db_session, workspace_id, *, external_id=
     return contact
 
 
+async def test_reveal_enriches_contact_and_its_company(client, db_session, unique_email, monkeypatch):
+    """Regression test: reveal() must not discard the rest of Apollo's
+    response (location, seniority, email_status) or its nested
+    organization data — that's real, provider-supplied enrichment, not
+    just email/phone."""
+    from app.models.company import Company
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    company = Company(workspace_id=uuid.UUID(workspace_id), name="BlackRock", domain="blackrock.com")
+    db_session.add(company)
+    await db_session.flush()
+
+    contact = await _make_apollo_sourced_contact(db_session, workspace_id)
+    contact.company_id = company.id
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.lead_reveal_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubRevealProvider(
+            {
+                "first_name": "Larry",
+                "last_name": "Fink",
+                "full_name": "Larry Fink",
+                "email": "larry@blackrock.example",
+                "email_status": "verified",
+                "phone": None,
+                "linkedin_url": "http://www.linkedin.com/in/laurencefink",
+                "city": "New York",
+                "state": "New York",
+                "country": "United States",
+                "seniority": "c_suite",
+                "department": "c_suite",
+                "organization": {
+                    "industry": "financial services",
+                    "employee_count": 27000,
+                    "annual_revenue": 24216000000.0,
+                    "founded_year": 1988,
+                    "website": "blackrock.com",
+                    "phone": "+12125551000",
+                    "linkedin_url": "http://www.linkedin.com/company/blackrock",
+                    "city": "New York",
+                    "state": "New York",
+                    "country": "United States",
+                },
+            }
+        ),
+    )
+
+    response = await client.post(
+        f"/api/v1/leads/{contact.id}/reveal", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    contact_body = response.json()["contact"]
+    assert contact_body["email_status"] == "verified"
+    assert contact_body["linkedin_url"] == "http://www.linkedin.com/in/laurencefink"
+    assert contact_body["city"] == "New York"
+    assert contact_body["seniority"] == "c_suite"
+
+    companies_response = await client.get(
+        "/api/v1/companies", params={"workspace_id": workspace_id}, headers=headers
+    )
+    updated_company = next(c for c in companies_response.json() if c["id"] == str(company.id))
+    assert updated_company["industry"] == "financial services"
+    assert updated_company["employee_count"] == 27000
+    assert updated_company["annual_revenue"] == 24216000000.0
+    assert updated_company["founded_year"] == 1988
+
+
 async def test_reveal_updates_contact_and_returns_revealed_true(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
     contact = await _make_apollo_sourced_contact(db_session, workspace_id)
@@ -98,6 +168,100 @@ async def test_reveal_returns_revealed_false_when_provider_finds_nothing(
     body = response.json()
     assert body["revealed"] is False
     assert body["contact"]["email"] is None  # unchanged, nothing fabricated
+    # revealable must flip to false — retrying would spend another credit
+    # for the same non-result
+    assert body["contact"]["revealable"] is False
+
+
+async def test_reveal_reports_false_when_only_a_non_email_field_is_found(
+    client, db_session, unique_email, monkeypatch
+):
+    """Regression test: Apollo returning a bare last_name/phone with no
+    email is not the success "revealed: true" implies to the UI (which
+    shows "Details revealed" and would otherwise keep the button up,
+    inviting repeat credit spend for the same non-result)."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    contact = await _make_apollo_sourced_contact(db_session, workspace_id)
+
+    monkeypatch.setattr(
+        "app.services.lead_reveal_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubRevealProvider(
+            {"first_name": None, "last_name": "Alvarez", "full_name": None, "email": None, "phone": None}
+        ),
+    )
+
+    response = await client.post(
+        f"/api/v1/leads/{contact.id}/reveal", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revealed"] is False
+    assert body["contact"]["last_name"] == "Alvarez"  # still applied
+    assert body["contact"]["email"] is None
+    assert body["contact"]["revealable"] is False
+
+
+async def test_reveal_refuses_second_attempt_after_first_found_no_email(
+    client, db_session, unique_email, monkeypatch
+):
+    """Regression test for the actual bug: this contact was reveal-clicked
+    6+ times in a row in production because the button never disabled,
+    each one a separate billed Apollo call for the identical non-result.
+    A second attempt must be refused outright, not silently re-billed."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    contact = await _make_apollo_sourced_contact(db_session, workspace_id)
+
+    call_count = 0
+
+    def build_provider(provider_name, category, settings):
+        nonlocal call_count
+        call_count += 1
+        return _StubRevealProvider(None)
+
+    monkeypatch.setattr(
+        "app.services.lead_reveal_service.provider_factory.build_provider", build_provider
+    )
+
+    first = await client.post(
+        f"/api/v1/leads/{contact.id}/reveal", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert first.status_code == 200
+    assert call_count == 1
+
+    second = await client.post(
+        f"/api/v1/leads/{contact.id}/reveal", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert second.status_code == 409
+    assert call_count == 1  # provider must NOT have been called again
+
+
+async def test_reveal_skips_provider_when_email_already_known(
+    client, db_session, unique_email, monkeypatch
+):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    contact = await _make_apollo_sourced_contact(db_session, workspace_id)
+    contact.email = "already@known.example"
+    await db_session.commit()
+
+    called = False
+
+    def build_provider(provider_name, category, settings):
+        nonlocal called
+        called = True
+        return _StubRevealProvider({"email": "should-not-be-used@example.com"})
+
+    monkeypatch.setattr(
+        "app.services.lead_reveal_service.provider_factory.build_provider", build_provider
+    )
+
+    response = await client.post(
+        f"/api/v1/leads/{contact.id}/reveal", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["contact"]["email"] == "already@known.example"
+    assert called is False
 
 
 async def test_get_lead_revealable_reflects_source_provider(client, db_session, unique_email):

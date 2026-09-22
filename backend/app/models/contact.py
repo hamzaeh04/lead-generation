@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, String, Uuid, func, inspect
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, String, Uuid, func, inspect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -57,8 +57,19 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     department: Mapped[str | None] = mapped_column(String(255), nullable=True)
     seniority: Mapped[str | None] = mapped_column(String(100), nullable=True)
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    #: Deliverability status from a provider's enrichment (e.g. Apollo
+    #: reveal returns "verified"/"unverified"/etc.) — real data from the
+    #: provider, never inferred or guessed by us.
+    email_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     linkedin_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    #: True once a /reveal call has been made for this contact, regardless
+    #: of whether it actually found an email. Apollo's /people/match has
+    #: no server-side memory of "already tried" — calling it again for the
+    #: same person spends another credit for the identical result. Once
+    #: one attempt comes back with no email, we stop offering "Reveal"
+    #: rather than let it be clicked repeatedly for nothing.
+    email_reveal_attempted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     #: This person's own location — distinct from the company's address
     #: (e.g. a remote employee). Currently only populated by Smartlead's
     #: SmartProspect search, which reports it per-person.
@@ -117,13 +128,19 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     @property
     def revealable(self) -> bool:
-        """True if this contact has a source whose provider supports the
-        on-demand /reveal action (currently just Apollo — Smartlead's
-        masked SmartProspect results have no API-based unlock, only a
-        dashboard one). The UI uses this to decide whether to show a
-        "Reveal" button at all rather than showing one that always 404s.
+        """True only when clicking "Reveal" could plausibly do something:
+        a source supports it (currently just Apollo — Smartlead's masked
+        SmartProspect results have no API-based unlock, only a dashboard
+        one), there's no email yet, and reveal hasn't already been tried
+        once and come up empty. That last check matters because Apollo's
+        /people/match has no "already tried" memory of its own — calling
+        it again for the same person spends another credit for the same
+        non-result, so the UI must stop offering the button once one
+        attempt has failed rather than let it be clicked repeatedly.
         Same unloaded-relationship guard as company_name — fails safe
         (False) when `sources` isn't eager-loaded, not a crash."""
+        if self.email or self.email_reveal_attempted:
+            return False
         if "sources" in inspect(self).unloaded:
             return False
         return any(source.provider == "apollo" for source in self.sources)

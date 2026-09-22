@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, Uuid, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -40,6 +40,10 @@ class Company(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     industry: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category: Mapped[str | None] = mapped_column(String(255), nullable=True)
     employee_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Real numbers from a provider's organization enrichment (e.g. Apollo's
+    #: reveal step) — never a parsed/estimated value from a band string.
+    annual_revenue: Mapped[float | None] = mapped_column(Float, nullable=True)
+    founded_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     linkedin_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     social_urls: Mapped[dict[str, str]] = mapped_column(JSON, default=dict, nullable=False)

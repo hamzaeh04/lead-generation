@@ -94,6 +94,15 @@ export function ProvidersIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function EmailSetupIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="3.5" width="12" height="9" rx="1.2" stroke="currentColor" />
+      <path d="M2.5 5L8 9L13.5 5" stroke="currentColor" />
+    </Icon>
+  );
+}
+
 export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

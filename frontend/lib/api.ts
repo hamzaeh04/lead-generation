@@ -902,6 +902,113 @@ export async function createSuppression(
   return data;
 }
 
+// ---------------------------------------------------------------------------
+// Email Setup (SMTP accounts)
+// ---------------------------------------------------------------------------
+
+export interface EmailSetup {
+  id: string;
+  workspace_id: string;
+  name: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string;
+  smtp_from_email: string;
+  is_default: boolean;
+  has_password: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailSetupDefaults {
+  name: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string;
+  smtp_password: string;
+  smtp_from_email: string;
+}
+
+export interface EmailSetupCreatePayload {
+  name: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string;
+  smtp_password: string;
+  smtp_from_email: string;
+  is_default?: boolean;
+}
+
+export interface EmailSetupUpdatePayload {
+  name?: string;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_username?: string;
+  smtp_password?: string;
+  smtp_from_email?: string;
+  is_default?: boolean;
+}
+
+export interface EmailSetupImportResult {
+  created: number;
+  skipped: number;
+  errors: { row_number: number; message: string }[];
+}
+
+export async function getEmailSetupDefaults(workspaceId: string): Promise<EmailSetupDefaults> {
+  const { data } = await api.get<EmailSetupDefaults>("/email-setups/defaults", {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export async function listEmailSetups(workspaceId: string): Promise<EmailSetup[]> {
+  const { data } = await api.get<EmailSetup[]>("/email-setups", {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export async function createEmailSetup(
+  workspaceId: string,
+  payload: EmailSetupCreatePayload
+): Promise<EmailSetup> {
+  const { data } = await api.post<EmailSetup>("/email-setups", payload, {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export async function updateEmailSetup(
+  workspaceId: string,
+  emailSetupId: string,
+  payload: EmailSetupUpdatePayload
+): Promise<EmailSetup> {
+  const { data } = await api.patch<EmailSetup>(`/email-setups/${emailSetupId}`, payload, {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export async function deleteEmailSetup(workspaceId: string, emailSetupId: string): Promise<void> {
+  await api.delete(`/email-setups/${emailSetupId}`, {
+    params: { workspace_id: workspaceId },
+  });
+}
+
+export async function importEmailSetupsCsv(
+  workspaceId: string,
+  file: File
+): Promise<EmailSetupImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<EmailSetupImportResult>("/email-setups/import", form, {
+    params: { workspace_id: workspaceId },
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
 export function storeSession(auth: AuthTokens) {
   window.localStorage.setItem("access_token", auth.access_token);
   window.localStorage.setItem("refresh_token", auth.refresh_token);

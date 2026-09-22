@@ -13,6 +13,7 @@ import {
   CompaniesIcon,
   DashboardIcon,
   DiscoverIcon,
+  EmailSetupIcon,
   LeadsIcon,
   LogoMarkIcon,
   MoonIcon,
@@ -35,6 +36,7 @@ const primaryNav = [
 ];
 
 const configureNav = [
+  { href: "/email-setup", label: "Email Setup", icon: EmailSetupIcon },
   { href: "/providers", label: "Providers", icon: ProvidersIcon },
   { href: "/settings/workspace", label: "Settings", icon: SettingsIcon },
 ];

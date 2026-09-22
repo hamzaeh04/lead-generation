@@ -5,6 +5,7 @@ from app.models.campaign_recipient import CampaignRecipient, RecipientStatus
 from app.models.company import Company, CompanySource
 from app.models.contact import Contact, ContactSource, LeadStatus
 from app.models.email_event import EmailEvent, EmailEventType
+from app.models.email_setup import EmailSetup
 from app.models.email_verification import EmailVerification
 from app.models.icp_profile import ICPProfile
 from app.models.intent_signal import IntentSignal
@@ -42,6 +43,7 @@ __all__ = [
     "RecipientStatus",
     "EmailEvent",
     "EmailEventType",
+    "EmailSetup",
     "Suppression",
     "SuppressionReason",
     "Note",

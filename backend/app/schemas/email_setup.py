@@ -8,8 +8,8 @@ class EmailSetupBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     smtp_host: str = Field(min_length=1, max_length=255)
     smtp_port: int = Field(default=587, ge=1, le=65535)
-    smtp_username: str = Field(min_length=1, max_length=255)
-    smtp_from_email: EmailStr
+    smtp_email: EmailStr
+    smtp_use_tls: bool = True
     is_default: bool = False
 
 
@@ -21,9 +21,9 @@ class EmailSetupUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     smtp_host: str | None = Field(default=None, min_length=1, max_length=255)
     smtp_port: int | None = Field(default=None, ge=1, le=65535)
-    smtp_username: str | None = Field(default=None, min_length=1, max_length=255)
+    smtp_email: EmailStr | None = None
     smtp_password: str | None = Field(default=None, min_length=1, max_length=255)
-    smtp_from_email: EmailStr | None = None
+    smtp_use_tls: bool | None = None
     is_default: bool | None = None
 
 
@@ -33,7 +33,6 @@ class EmailSetupRead(EmailSetupBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    workspace_id: uuid.UUID
     has_password: bool = True
     created_at: datetime
     updated_at: datetime
@@ -43,11 +42,11 @@ class EmailSetupDefaults(BaseModel):
     """UI placeholder defaults (mirrors .env SMTP_* keys)."""
 
     name: str = "Primary SMTP"
-    smtp_host: str = "smtp.example.com"
+    smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
-    smtp_username: str = "you@yourcompany.com"
+    smtp_email: str = "you@yourcompany.com"
     smtp_password: str = "your-smtp-password"
-    smtp_from_email: str = "you@yourcompany.com"
+    smtp_use_tls: bool = True
 
 
 class EmailSetupImportRowError(BaseModel):

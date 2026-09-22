@@ -20,18 +20,17 @@ import {
   type EmailSetupCreatePayload,
   type EmailSetupDefaults,
 } from "@/lib/api";
-import { useWorkspace } from "@/lib/workspace-context";
 
 const inputClass =
   "rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-fg placeholder:text-fgMuted focus:border-accent focus:outline-none";
 
 const FALLBACK_DEFAULTS: EmailSetupDefaults = {
   name: "Primary SMTP",
-  smtp_host: "smtp.example.com",
+  smtp_host: "smtp.gmail.com",
   smtp_port: 587,
-  smtp_username: "you@yourcompany.com",
+  smtp_email: "you@yourcompany.com",
   smtp_password: "your-smtp-password",
-  smtp_from_email: "you@yourcompany.com",
+  smtp_use_tls: true,
 };
 
 function Field({
@@ -56,9 +55,9 @@ type FormState = {
   name: string;
   smtp_host: string;
   smtp_port: number;
-  smtp_username: string;
+  smtp_email: string;
   smtp_password: string;
-  smtp_from_email: string;
+  smtp_use_tls: boolean;
   is_default: boolean;
 };
 
@@ -67,9 +66,9 @@ function emptyForm(defaults: EmailSetupDefaults): FormState {
     name: "",
     smtp_host: "",
     smtp_port: defaults.smtp_port || 587,
-    smtp_username: "",
+    smtp_email: "",
     smtp_password: "",
-    smtp_from_email: "",
+    smtp_use_tls: defaults.smtp_use_tls ?? true,
     is_default: false,
   };
 }
@@ -79,9 +78,9 @@ function formFromSetup(setup: EmailSetup, defaults: EmailSetupDefaults): FormSta
     name: setup.name,
     smtp_host: setup.smtp_host,
     smtp_port: setup.smtp_port || defaults.smtp_port || 587,
-    smtp_username: setup.smtp_username,
+    smtp_email: setup.smtp_email,
     smtp_password: "",
-    smtp_from_email: setup.smtp_from_email,
+    smtp_use_tls: setup.smtp_use_tls ?? defaults.smtp_use_tls ?? true,
     is_default: setup.is_default,
   };
 }
@@ -120,8 +119,7 @@ function EmailSetupForm({
           {mode === "create" ? "Add SMTP account" : "Edit SMTP account"}
         </h2>
         <p className="mt-1 text-[12.5px] text-fgMuted">
-          Same fields as backend <code className="text-fg">SMTP_*</code> env vars — host, port,
-          username, password, and from email.
+          Fields: name, smtp_host, smtp_port, smtp_email, smtp_password, smtp_use_tls.
         </p>
       </div>
       <form
@@ -132,7 +130,7 @@ function EmailSetupForm({
         }}
       >
         <div className="sm:col-span-2">
-          <Field label="Name" hint="Internal label for this SMTP account.">
+          <Field label="name" hint="Internal label for this SMTP account.">
             <input
               required
               autoFocus
@@ -143,7 +141,7 @@ function EmailSetupForm({
             />
           </Field>
         </div>
-        <Field label="SMTP_HOST" hint="SMTP server hostname.">
+        <Field label="smtp_host" hint="SMTP server hostname.">
           <input
             required
             value={form.smtp_host}
@@ -152,7 +150,7 @@ function EmailSetupForm({
             className={inputClass}
           />
         </Field>
-        <Field label="SMTP_PORT" hint="Usually 587 (STARTTLS) or 465 (SSL).">
+        <Field label="smtp_port" hint="Usually 587 (STARTTLS) or 465 (SSL).">
           <input
             required
             type="number"
@@ -164,17 +162,18 @@ function EmailSetupForm({
             className={inputClass}
           />
         </Field>
-        <Field label="SMTP_USERNAME" hint="Login used to authenticate with the SMTP server.">
+        <Field label="smtp_email" hint="Login / from email address (must be unique).">
           <input
             required
-            value={form.smtp_username}
-            onChange={(e) => set("smtp_username", e.target.value)}
-            placeholder={defaults.smtp_username}
+            type="email"
+            value={form.smtp_email}
+            onChange={(e) => set("smtp_email", e.target.value)}
+            placeholder={defaults.smtp_email}
             className={inputClass}
           />
         </Field>
         <Field
-          label="SMTP_PASSWORD"
+          label="smtp_password"
           hint={
             mode === "edit"
               ? "Leave blank to keep the current password."
@@ -191,18 +190,15 @@ function EmailSetupForm({
             autoComplete="new-password"
           />
         </Field>
-        <div className="sm:col-span-2">
-          <Field label="SMTP_FROM_EMAIL" hint="Default From address for outbound mail.">
-            <input
-              required
-              type="email"
-              value={form.smtp_from_email}
-              onChange={(e) => set("smtp_from_email", e.target.value)}
-              placeholder={defaults.smtp_from_email}
-              className={inputClass}
-            />
-          </Field>
-        </div>
+        <label className="flex items-center gap-2 text-[13px] text-fg sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={form.smtp_use_tls}
+            onChange={(e) => set("smtp_use_tls", e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-border"
+          />
+          smtp_use_tls — use STARTTLS (recommended for port 587)
+        </label>
         <label className="flex items-center gap-2 text-[13px] text-fg sm:col-span-2">
           <input
             type="checkbox"
@@ -210,7 +206,7 @@ function EmailSetupForm({
             onChange={(e) => set("is_default", e.target.checked)}
             className="h-3.5 w-3.5 rounded border-border"
           />
-          Set as default for this workspace
+          is_default — set as default SMTP account
         </label>
         <div className="flex items-center gap-2 sm:col-span-2">
           <Button type="submit" disabled={isPending}>
@@ -219,7 +215,11 @@ function EmailSetupForm({
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          {error && <p className="text-[12.5px] text-danger">Could not save email setup.</p>}
+          {error && (
+            <p className="text-[12.5px] text-danger">
+              Could not save — smtp_email may already be in use.
+            </p>
+          )}
         </div>
       </form>
     </Card>
@@ -231,12 +231,11 @@ function CsvImportCard({
 }: {
   onImported: (result: { created: number; skipped: number }) => void;
 }) {
-  const { activeWorkspace } = useWorkspace();
   const inputRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: (file: File) => importEmailSetupsCsv(activeWorkspace!.id, file),
+    mutationFn: (file: File) => importEmailSetupsCsv(file),
     onSuccess: (result) => {
       setMessage(
         `Imported ${result.created} account${result.created === 1 ? "" : "s"}` +
@@ -258,9 +257,9 @@ function CsvImportCard({
         <p className="mt-1 text-[12.5px] text-fgMuted">
           Columns:{" "}
           <code className="text-fg">
-            name, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from_email
+            name, smtp_host, smtp_port, smtp_email, smtp_password, smtp_use_tls
           </code>
-          . Port defaults to 587 when omitted.
+          . Port defaults to 587 and TLS to true when omitted.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -281,7 +280,7 @@ function CsvImportCard({
       )}
       <a
         href={`data:text/csv;charset=utf-8,${encodeURIComponent(
-          "name,smtp_host,smtp_port,smtp_username,smtp_password,smtp_from_email\nPrimary SMTP,smtp.example.com,587,you@yourcompany.com,your-smtp-password,you@yourcompany.com\n"
+          "name,smtp_host,smtp_port,smtp_email,smtp_password,smtp_use_tls\nPrimary SMTP,smtp.gmail.com,587,you@yourcompany.com,your-smtp-password,true\n"
         )}`}
         download="email-setup-template.csv"
         className="w-fit text-[12.5px] text-accent hover:underline"
@@ -293,46 +292,43 @@ function CsvImportCard({
 }
 
 function EmailSetupContent() {
-  const { activeWorkspace } = useWorkspace();
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<EmailSetup | null>(null);
 
   const defaultsQuery = useQuery({
-    queryKey: ["email-setup-defaults", activeWorkspace?.id],
-    queryFn: () => getEmailSetupDefaults(activeWorkspace!.id),
-    enabled: !!activeWorkspace,
+    queryKey: ["email-setup-defaults"],
+    queryFn: () => getEmailSetupDefaults(),
   });
 
   const listQuery = useQuery({
-    queryKey: ["email-setups", activeWorkspace?.id],
-    queryFn: () => listEmailSetups(activeWorkspace!.id),
-    enabled: !!activeWorkspace,
+    queryKey: ["email-setups"],
+    queryFn: () => listEmailSetups(),
   });
 
   const defaults = defaultsQuery.data ?? FALLBACK_DEFAULTS;
   const setups = listQuery.data ?? [];
 
   const createMutation = useMutation({
-    mutationFn: (payload: EmailSetupCreatePayload) => createEmailSetup(activeWorkspace!.id, payload),
+    mutationFn: (payload: EmailSetupCreatePayload) => createEmailSetup(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["email-setups", activeWorkspace?.id] });
+      queryClient.invalidateQueries({ queryKey: ["email-setups"] });
       setFormOpen(false);
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Partial<EmailSetupCreatePayload> }) =>
-      updateEmailSetup(activeWorkspace!.id, id, payload),
+      updateEmailSetup(id, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["email-setups", activeWorkspace?.id] });
+      queryClient.invalidateQueries({ queryKey: ["email-setups"] });
       setEditing(null);
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteEmailSetup(activeWorkspace!.id, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["email-setups", activeWorkspace?.id] }),
+    mutationFn: (id: string) => deleteEmailSetup(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["email-setups"] }),
   });
 
   function handleCreate(values: FormState) {
@@ -340,9 +336,9 @@ function EmailSetupContent() {
       name: values.name.trim(),
       smtp_host: values.smtp_host.trim(),
       smtp_port: values.smtp_port,
-      smtp_username: values.smtp_username.trim(),
+      smtp_email: values.smtp_email.trim(),
       smtp_password: values.smtp_password,
-      smtp_from_email: values.smtp_from_email.trim(),
+      smtp_use_tls: values.smtp_use_tls,
       is_default: values.is_default,
     });
   }
@@ -353,8 +349,8 @@ function EmailSetupContent() {
       name: values.name.trim(),
       smtp_host: values.smtp_host.trim(),
       smtp_port: values.smtp_port,
-      smtp_username: values.smtp_username.trim(),
-      smtp_from_email: values.smtp_from_email.trim(),
+      smtp_email: values.smtp_email.trim(),
+      smtp_use_tls: values.smtp_use_tls,
       is_default: values.is_default,
     };
     if (values.smtp_password.trim()) {
@@ -369,7 +365,7 @@ function EmailSetupContent() {
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight">Email Setup</h1>
           <p className="mt-1 text-[13px] text-fgMuted">
-            Manage SMTP accounts for this workspace — create manually or import a CSV.
+            Global SMTP accounts — create manually or import a CSV.
           </p>
         </div>
         {!formOpen && !editing && (
@@ -384,7 +380,9 @@ function EmailSetupContent() {
         )}
       </div>
 
-      {!editing && <CsvImportCard onImported={() => queryClient.invalidateQueries({ queryKey: ["email-setups", activeWorkspace?.id] })} />}
+      {!editing && (
+        <CsvImportCard onImported={() => queryClient.invalidateQueries({ queryKey: ["email-setups"] })} />
+      )}
 
       {formOpen && (
         <EmailSetupForm
@@ -419,7 +417,7 @@ function EmailSetupContent() {
       {listQuery.isSuccess && setups.length === 0 && !formOpen && (
         <EmptyState
           title="No SMTP accounts yet"
-          description="Add one manually or import a CSV with smtp_host, smtp_port, smtp_username, smtp_password, and smtp_from_email."
+          description="Add one manually or import a CSV with name, smtp_host, smtp_port, smtp_email, smtp_password, smtp_use_tls."
           action={<Button onClick={() => setFormOpen(true)}>Add your first SMTP account</Button>}
         />
       )}
@@ -427,12 +425,12 @@ function EmailSetupContent() {
       {setups.length > 0 && (
         <Table>
           <TableHead>
-            <Th>Name</Th>
-            <Th>Host</Th>
-            <Th>Port</Th>
-            <Th>Username</Th>
-            <Th>From</Th>
-            <Th>Default</Th>
+            <Th>name</Th>
+            <Th>smtp_host</Th>
+            <Th>smtp_port</Th>
+            <Th>smtp_email</Th>
+            <Th>smtp_use_tls</Th>
+            <Th>is_default</Th>
             <Th />
           </TableHead>
           <TableBody>
@@ -441,9 +439,21 @@ function EmailSetupContent() {
                 <Td className="font-medium text-fg">{setup.name}</Td>
                 <Td className="text-fgMuted">{setup.smtp_host}</Td>
                 <Td className="text-fgMuted">{setup.smtp_port}</Td>
-                <Td className="text-fgMuted">{setup.smtp_username}</Td>
-                <Td className="text-fgMuted">{setup.smtp_from_email}</Td>
-                <Td>{setup.is_default ? <Pill tone="accent">default</Pill> : <span className="text-fgMuted">—</span>}</Td>
+                <Td className="text-fgMuted">{setup.smtp_email}</Td>
+                <Td>
+                  {setup.smtp_use_tls ? (
+                    <Pill tone="success">true</Pill>
+                  ) : (
+                    <Pill tone="muted">false</Pill>
+                  )}
+                </Td>
+                <Td>
+                  {setup.is_default ? (
+                    <Pill tone="accent">true</Pill>
+                  ) : (
+                    <span className="text-fgMuted">false</span>
+                  )}
+                </Td>
                 <Td>
                   <div className="flex justify-end gap-2">
                     <Button

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import uuid
-
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Uuid
+from sqlalchemy import Boolean, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -10,23 +8,20 @@ from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class EmailSetup(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Workspace SMTP account configuration.
+    """Global SMTP account configuration (not workspace-scoped).
 
-    Mirrors the env SMTP_* knobs (host/port/username/password/from_email) so
-    users can keep multiple senders per workspace, create them one-by-one, or
-    bulk-import via CSV. Credentials are stored for outbound mail — never log
-    smtp_password (see app.utils.logging._SENSITIVE_KEYS).
+    Columns: name, smtp_host, smtp_port, smtp_email, smtp_password,
+    smtp_use_tls, is_default, created_at, updated_at.
+    smtp_email is unique globally. Never log smtp_password.
     """
 
     __tablename__ = "email_setups"
+    __table_args__ = (UniqueConstraint("smtp_email", name="uq_email_setups_smtp_email"),)
 
-    workspace_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
-    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     smtp_host: Mapped[str] = mapped_column(String(255), nullable=False)
     smtp_port: Mapped[int] = mapped_column(Integer, nullable=False, default=587)
-    smtp_username: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_email: Mapped[str] = mapped_column(String(255), nullable=False)
     smtp_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    smtp_from_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_use_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

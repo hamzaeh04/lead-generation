@@ -5,6 +5,7 @@ import {
   ChevronsUpDown,
   LayoutDashboard,
   LogOut,
+  Mail,
   Megaphone,
   Menu,
   Monitor,
@@ -46,6 +47,7 @@ const primaryNav = [
 ];
 
 const configureNav = [
+  { href: "/email-setup", label: "Email Setup", icon: Mail },
   { href: "/providers", label: "Providers", icon: Plug },
   { href: "/settings/workspace", label: "Settings", icon: Settings },
 ];

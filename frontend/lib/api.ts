@@ -1001,6 +1001,155 @@ export async function createSuppression(
   return data;
 }
 
+// ---------------------------------------------------------------------------
+// Email Setup (SMTP accounts)
+// ---------------------------------------------------------------------------
+
+export interface EmailSetup {
+  id: string;
+  name: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_email: string;
+  smtp_use_tls: boolean;
+  is_default: boolean;
+  has_password: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailSetupDefaults {
+  name: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_email: string;
+  smtp_password: string;
+  smtp_use_tls: boolean;
+}
+
+export interface EmailSetupCreatePayload {
+  name: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_email: string;
+  smtp_password: string;
+  smtp_use_tls?: boolean;
+  is_default?: boolean;
+}
+
+export interface EmailSetupUpdatePayload {
+  name?: string;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_email?: string;
+  smtp_password?: string;
+  smtp_use_tls?: boolean;
+  is_default?: boolean;
+}
+
+export interface EmailSetupImportResult {
+  created: number;
+  skipped: number;
+  errors: { row_number: number; message: string }[];
+}
+
+export async function getEmailSetupDefaults(): Promise<EmailSetupDefaults> {
+  const { data } = await api.get<EmailSetupDefaults>("/email-setups/defaults");
+  return data;
+}
+
+export async function listEmailSetups(): Promise<EmailSetup[]> {
+  const { data } = await api.get<EmailSetup[]>("/email-setups");
+  return data;
+}
+
+export async function createEmailSetup(payload: EmailSetupCreatePayload): Promise<EmailSetup> {
+  const { data } = await api.post<EmailSetup>("/email-setups", payload);
+  return data;
+}
+
+export async function updateEmailSetup(
+  emailSetupId: string,
+  payload: EmailSetupUpdatePayload
+): Promise<EmailSetup> {
+  const { data } = await api.patch<EmailSetup>(`/email-setups/${emailSetupId}`, payload);
+  return data;
+}
+
+export async function deleteEmailSetup(emailSetupId: string): Promise<void> {
+  await api.delete(`/email-setups/${emailSetupId}`);
+}
+
+export async function importEmailSetupsCsv(file: File): Promise<EmailSetupImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<EmailSetupImportResult>("/email-setups/import", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace API keys (singleton provider credentials)
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceApiKeys {
+  id: string;
+  workspace_id: string;
+  has_apollo_api_key: boolean;
+  has_pdl_api_key: boolean;
+  has_serpapi_api_key: boolean;
+  has_apify_api_token: boolean;
+  has_phantombuster_api_key: boolean;
+  has_hunter_api_key: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceApiKeysDefaults {
+  apollo_api_key: string;
+  pdl_api_key: string;
+  serpapi_api_key: string;
+  apify_api_token: string;
+  phantombuster_api_key: string;
+  hunter_api_key: string;
+}
+
+export interface WorkspaceApiKeysUpsertPayload {
+  apollo_api_key?: string | null;
+  pdl_api_key?: string | null;
+  serpapi_api_key?: string | null;
+  apify_api_token?: string | null;
+  phantombuster_api_key?: string | null;
+  hunter_api_key?: string | null;
+}
+
+export async function getWorkspaceApiKeysDefaults(
+  workspaceId: string
+): Promise<WorkspaceApiKeysDefaults> {
+  const { data } = await api.get<WorkspaceApiKeysDefaults>("/workspace-api-keys/defaults", {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export async function getWorkspaceApiKeys(workspaceId: string): Promise<WorkspaceApiKeys | null> {
+  const { data } = await api.get<WorkspaceApiKeys | null>("/workspace-api-keys", {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export async function upsertWorkspaceApiKeys(
+  workspaceId: string,
+  payload: WorkspaceApiKeysUpsertPayload
+): Promise<WorkspaceApiKeys> {
+  const { data } = await api.put<WorkspaceApiKeys>("/workspace-api-keys", payload, {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
 export function storeSession(auth: AuthTokens) {
   window.localStorage.setItem("access_token", auth.access_token);
   window.localStorage.setItem("refresh_token", auth.refresh_token);

@@ -24,6 +24,23 @@ SUPPORTED_VARIABLES = (
 _VARIABLE_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
 
+def ensure_lead_personalization(subject: str, body: str) -> tuple[str, str]:
+    """Guarantee lead name appears in subject and a Hi greeting in the body.
+
+    Operators often paste static copy; when {{first_name}} is missing we inject
+    it so every send is personalized from the contact record.
+    """
+    personalized_subject = subject
+    if "{{first_name}}" not in subject and "{{last_name}}" not in subject:
+        personalized_subject = f"{{{{first_name}}}}, {subject}" if subject.strip() else "{{first_name}}"
+
+    personalized_body = body
+    if "{{first_name}}" not in body:
+        personalized_body = f"Hi {{{{first_name}}}},\n\n{body}" if body.strip() else "Hi {{first_name}},"
+
+    return personalized_subject, personalized_body
+
+
 def build_context(
     *,
     contact: Contact,

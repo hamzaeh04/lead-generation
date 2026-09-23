@@ -1,0 +1,30 @@
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Celery / local runtime
+celerybeat-schedule
+celerybeat-schedule-*
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Local dumps / exports
+db_exports/
+*.sql

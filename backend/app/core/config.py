@@ -59,6 +59,28 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str | None = None
     SMTP_USE_TLS: bool = True
 
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def ensure_asyncpg_driver(cls, v: str) -> str:
+        """Hosts like Neon/Vercel often provide postgres:// or postgresql://
+        which SQLAlchemy maps to sync psycopg2. This app uses create_async_engine,
+        so force the asyncpg driver."""
+        if not isinstance(v, str) or not v.strip():
+            return v
+        url = v.strip()
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://") :]
+        if url.startswith("postgresql://"):
+            url = "postgresql+asyncpg://" + url[len("postgresql://") :]
+        elif url.startswith("postgresql+psycopg2://"):
+            url = "postgresql+asyncpg://" + url[len("postgresql+psycopg2://") :]
+        # asyncpg uses `ssl=`, not libpq's sslmode=
+        if "sslmode=" in url and "ssl=" not in url:
+            url = url.replace("sslmode=require", "ssl=require").replace(
+                "sslmode=verify-full", "ssl=require"
+            )
+        return url
+
     @field_validator("CELERY_BROKER_URL", mode="before")
     @classmethod
     def default_broker(cls, v: str | None, info) -> str:

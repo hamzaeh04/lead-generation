@@ -862,16 +862,43 @@ export interface EnrollResponse {
   enrolled: number;
   already_enrolled: number;
   not_found: number;
+  sent?: number;
+  failed?: number;
+  suppressed?: number;
 }
 
 export async function enrollContacts(
   workspaceId: string,
   campaignId: string,
-  contactIds: string[]
+  contactIds: string[],
+  emailSetupId?: string
 ): Promise<EnrollResponse> {
   const { data } = await api.post<EnrollResponse>(
     `/campaigns/${campaignId}/enroll`,
-    { contact_ids: contactIds },
+    {
+      contact_ids: contactIds,
+      ...(emailSetupId ? { email_setup_id: emailSetupId } : {}),
+    },
+    { params: { workspace_id: workspaceId } }
+  );
+  return data;
+}
+
+export async function enrollBatches(
+  workspaceId: string,
+  campaignId: string,
+  batchIds: string[],
+  emailSetupId: string,
+  content: { subject: string; body: string }
+): Promise<EnrollResponse> {
+  const { data } = await api.post<EnrollResponse>(
+    `/campaigns/${campaignId}/enroll`,
+    {
+      batch_ids: batchIds,
+      email_setup_id: emailSetupId,
+      subject: content.subject,
+      body: content.body,
+    },
     { params: { workspace_id: workspaceId } }
   );
   return data;

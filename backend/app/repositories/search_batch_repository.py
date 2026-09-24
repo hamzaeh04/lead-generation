@@ -69,12 +69,23 @@ class SearchBatchRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_contact_ids(self, batch_id: uuid.UUID) -> list[uuid.UUID]:
+        """IDs only — used by campaign enroll so we don't pull company/sources/qualifications."""
+        result = await self.session.execute(
+            select(SearchBatchContact.contact_id).where(SearchBatchContact.batch_id == batch_id)
+        )
+        return list(result.scalars().all())
+
     async def list_contacts(self, batch_id: uuid.UUID) -> list[Contact]:
         result = await self.session.execute(
             select(Contact)
             .join(SearchBatchContact, SearchBatchContact.contact_id == Contact.id)
             .where(SearchBatchContact.batch_id == batch_id)
-            .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
+            .options(
+                selectinload(Contact.company),
+                selectinload(Contact.sources),
+                selectinload(Contact.qualifications),
+            )
             .order_by(Contact.created_at.desc())
         )
         return list(result.scalars().unique().all())

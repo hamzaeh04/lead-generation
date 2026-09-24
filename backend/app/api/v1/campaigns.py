@@ -171,10 +171,20 @@ async def enroll_contacts(
     payload: EnrollRequest,
     _membership=Depends(require_workspace_editor),
     session: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ):
-    service = CampaignService(session)
+    """Enroll contacts and/or batch leads. When `email_setup_id` is set,
+    mail is sent immediately from that SMTP account with lead-name
+    personalization in the subject and greeting."""
+    service = CampaignService(session, settings)
     return await service.enroll_contacts(
-        workspace_id=workspace_id, campaign_id=campaign_id, contact_ids=payload.contact_ids
+        workspace_id=workspace_id,
+        campaign_id=campaign_id,
+        contact_ids=payload.contact_ids,
+        batch_ids=payload.batch_ids,
+        email_setup_id=payload.email_setup_id,
+        subject=payload.subject,
+        body=payload.body,
     )
 
 

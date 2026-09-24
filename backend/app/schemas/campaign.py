@@ -56,13 +56,20 @@ class CampaignRead(BaseModel):
 
 
 class EnrollRequest(BaseModel):
-    contact_ids: list[uuid.UUID]
+    contact_ids: list[uuid.UUID] = Field(default_factory=list)
+    batch_ids: list[uuid.UUID] = Field(default_factory=list)
+    email_setup_id: uuid.UUID | None = None
+    subject: str | None = Field(default=None, min_length=1, max_length=500)
+    body: str | None = Field(default=None, min_length=1)
 
 
 class EnrollResponse(BaseModel):
     enrolled: int
     already_enrolled: int
     not_found: int
+    sent: int = 0
+    failed: int = 0
+    suppressed: int = 0
 
 
 class ProcessCampaignResponse(BaseModel):

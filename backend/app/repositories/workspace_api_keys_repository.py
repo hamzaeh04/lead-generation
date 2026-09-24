@@ -8,11 +8,8 @@ from app.models.workspace_api_keys import WorkspaceApiKeys
 
 _KEY_FIELDS = (
     "apollo_api_key",
-    "pdl_api_key",
-    "serpapi_api_key",
-    "apify_api_token",
-    "phantombuster_api_key",
-    "hunter_api_key",
+    "smartlead_api_key",
+    "groq_api_key",
 )
 
 

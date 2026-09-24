@@ -18,12 +18,12 @@ import { getErrorMessage } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace-context";
 
 const PROVIDER_INFO: Record<string, { label: string; description: string; badgeClass: string; icon: typeof Zap }> = {
-  apollo: {
-    label: "Apollo",
-    description: "270M+ verified people — AI prompt or structured filters",
-    badgeClass: "bg-indigo-500",
-    icon: Zap,
-  },
+  // apollo: {
+  //   label: "Apollo",
+  //   description: "270M+ verified people — AI prompt or structured filters",
+  //   badgeClass: "bg-indigo-500",
+  //   icon: Zap,
+  // },
   smartlead: {
     label: "Smartlead SmartProspect",
     description: "AI-powered prospect finder — 270M+ verified profiles, or import from a campaign",
@@ -104,7 +104,11 @@ function DiscoverContent() {
   const providersQuery = useQuery({ queryKey: ["providers"], queryFn: listProviders });
 
   const availableProviders = (providersQuery.data ?? []).filter(
-    (p) => p.enabled && p.category === "person_discovery"
+    (p) =>
+      p.enabled &&
+      p.category === "person_discovery" &&
+      // Apollo hidden on Discover for now — Smartlead only.
+      p.provider !== "apollo"
   );
   const selectedProvider = provider || availableProviders[0]?.provider || "";
 
@@ -128,7 +132,7 @@ function DiscoverContent() {
         <p className="mb-2 text-sm font-medium text-fgMuted">Data source</p>
         {providersQuery.isSuccess && availableProviders.length === 0 ? (
           <p className="text-sm text-danger">
-            No lead-prospecting provider is enabled. Ask a workspace admin to enable Apollo or Smartlead on the
+            No lead-prospecting provider is enabled. Ask a workspace admin to enable Smartlead on the
             Providers page.
           </p>
         ) : (
@@ -150,7 +154,7 @@ function DiscoverContent() {
 
       <div className="flex flex-col gap-6">
         <Card className="flex w-full flex-col gap-4">
-          {selectedProvider === "apollo" || selectedProvider === "smartlead" ? (
+          {selectedProvider === "smartlead" ? (
             <ProspectPanel
               provider={selectedProvider}
               workspaceId={workspaceId}
@@ -237,7 +241,7 @@ export default function DiscoverPage() {
   return (
     <AppShell
       title="Discover"
-      description="Find real leads with Apollo or Smartlead — AI prompt or manual filters."
+      description="Find real leads with Smartlead — AI prompt or manual filters."
       fullWidth
     >
       <DiscoverContent />

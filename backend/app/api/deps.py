@@ -14,13 +14,22 @@ from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.services.rate_limiter import RateLimiter, get_rate_limiter
 from app.services.token_revocation import TokenRevocationStore, get_token_revocation_store
+from app.utils.db_errors import db_unavailable_payload, is_db_connectivity_error
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
-        yield session
+    try:
+        async with AsyncSessionLocal() as session:
+            yield session
+    except Exception as exc:  # noqa: BLE001
+        if is_db_connectivity_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=db_unavailable_payload(exc),
+            ) from exc
+        raise
 
 
 async def get_bearer_payload(

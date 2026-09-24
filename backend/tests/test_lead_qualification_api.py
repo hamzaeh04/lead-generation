@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import json
 import uuid
 
@@ -105,8 +106,8 @@ async def test_qualify_lead_stores_and_returns_result(client, db_session, unique
     contact = await _make_contact(db_session, workspace_id)
 
     monkeypatch.setattr(
-        "app.services.lead_qualification_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider(_VALID_RESPONSE),
+        "app.services.lead_qualification_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider(_VALID_RESPONSE)),
     )
 
     response = await client.post(
@@ -132,8 +133,8 @@ async def test_qualified_lead_shows_up_on_get_lead(client, db_session, unique_em
     contact = await _make_contact(db_session, workspace_id)
 
     monkeypatch.setattr(
-        "app.services.lead_qualification_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider(_VALID_RESPONSE),
+        "app.services.lead_qualification_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider(_VALID_RESPONSE)),
     )
     contact_id = contact.id  # captured before expire_all() below expires it too
     await client.post(f"/api/v1/leads/{contact_id}/qualify", params={"workspace_id": workspace_id}, headers=headers)
@@ -170,8 +171,8 @@ async def test_qualify_lead_rejects_invalid_tier(client, db_session, unique_emai
 
     bad_response = {**_VALID_RESPONSE, "tier": "Z"}
     monkeypatch.setattr(
-        "app.services.lead_qualification_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider(bad_response),
+        "app.services.lead_qualification_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider(bad_response)),
     )
 
     response = await client.post(
@@ -188,8 +189,8 @@ async def test_qualify_lead_rejects_non_json_response(client, db_session, unique
     contact = await _make_contact(db_session, workspace_id)
 
     monkeypatch.setattr(
-        "app.services.lead_qualification_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider("not json"),
+        "app.services.lead_qualification_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider("not json")),
     )
 
     response = await client.post(
@@ -233,8 +234,8 @@ async def test_qualify_all_in_batch_skips_already_scored(client, db_session, uni
     not_scored = await _make_contact(db_session, workspace_id, first_name="Fresh")
 
     monkeypatch.setattr(
-        "app.services.lead_qualification_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider(_VALID_RESPONSE),
+        "app.services.lead_qualification_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider(_VALID_RESPONSE)),
     )
     already_scored_id = already_scored.id  # captured before expire_all() below expires it too
     not_scored_id = not_scored.id

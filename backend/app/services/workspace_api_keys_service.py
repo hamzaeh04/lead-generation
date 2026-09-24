@@ -23,11 +23,8 @@ def to_read(row: WorkspaceApiKeys) -> WorkspaceApiKeysRead:
         id=row.id,
         workspace_id=row.workspace_id,
         has_apollo_api_key=bool(row.apollo_api_key),
-        has_pdl_api_key=bool(row.pdl_api_key),
-        has_serpapi_api_key=bool(row.serpapi_api_key),
-        has_apify_api_token=bool(row.apify_api_token),
-        has_phantombuster_api_key=bool(row.phantombuster_api_key),
-        has_hunter_api_key=bool(row.hunter_api_key),
+        has_smartlead_api_key=bool(row.smartlead_api_key),
+        has_groq_api_key=bool(row.groq_api_key),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

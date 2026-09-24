@@ -83,12 +83,17 @@ class SearchService:
                 ),
             )
 
-        provider = provider_factory.build_provider(provider_name, category, self.settings)
+        provider = await provider_factory.build_provider_for_workspace(
+            self.session, workspace_id, provider_name, category, self.settings
+        )
         if provider is None:
             env_var = provider_factory.required_env_var(provider_name, category)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Provider '{provider_name}' credentials not configured (set {env_var}).",
+                detail=(
+                    f"Provider '{provider_name}' credentials not configured "
+                    f"(save in Settings → Provider API keys, or set {env_var})."
+                ),
             )
 
         contacts_found: list[NormalizedContact] = []

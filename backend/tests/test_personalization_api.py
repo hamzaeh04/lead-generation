@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import json
 import uuid
 from datetime import datetime, timezone
@@ -99,8 +100,8 @@ async def test_personalize_persists_and_returns_generation(client, db_session, u
         "outreach_angle": "Recent expansion",
     }
     monkeypatch.setattr(
-        "app.services.personalization_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider(response_body),
+        "app.services.personalization_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider(response_body)),
     )
 
     response = await client.post(
@@ -137,9 +138,11 @@ async def test_personalize_without_intent_signal_has_no_personalization_source(
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.personalization_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider(
-            {"subject": "Hi", "body": "...", "cta": "...", "opening_line": "...", "outreach_angle": "..."}
+        "app.services.personalization_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(
+            return_value=_StubAIProvider(
+                {"subject": "Hi", "body": "...", "cta": "...", "opening_line": "...", "outreach_angle": "..."}
+            )
         ),
     )
 
@@ -196,8 +199,8 @@ async def test_personalize_returns_502_when_provider_fails(client, db_session, u
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.personalization_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _FailingAIProvider(),
+        "app.services.personalization_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_FailingAIProvider()),
     )
 
     response = await client.post(

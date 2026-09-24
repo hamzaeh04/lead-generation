@@ -1,6 +1,11 @@
 import axios from "axios";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const PRODUCTION_API_BASE_URL = "https://lead-generation-backend-nu.vercel.app";
+
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.NODE_ENV === "production" ? PRODUCTION_API_BASE_URL : "http://localhost:8000")
+).replace(/\/$/, "");
 
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
@@ -1124,31 +1129,22 @@ export interface WorkspaceApiKeys {
   id: string;
   workspace_id: string;
   has_apollo_api_key: boolean;
-  has_pdl_api_key: boolean;
-  has_serpapi_api_key: boolean;
-  has_apify_api_token: boolean;
-  has_phantombuster_api_key: boolean;
-  has_hunter_api_key: boolean;
+  has_smartlead_api_key: boolean;
+  has_groq_api_key: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface WorkspaceApiKeysDefaults {
   apollo_api_key: string;
-  pdl_api_key: string;
-  serpapi_api_key: string;
-  apify_api_token: string;
-  phantombuster_api_key: string;
-  hunter_api_key: string;
+  smartlead_api_key: string;
+  groq_api_key: string;
 }
 
 export interface WorkspaceApiKeysUpsertPayload {
   apollo_api_key?: string | null;
-  pdl_api_key?: string | null;
-  serpapi_api_key?: string | null;
-  apify_api_token?: string | null;
-  phantombuster_api_key?: string | null;
-  hunter_api_key?: string | null;
+  smartlead_api_key?: string | null;
+  groq_api_key?: string | null;
 }
 
 export async function getWorkspaceApiKeysDefaults(

@@ -401,11 +401,16 @@ async def test_reveal_404_when_contact_does_not_exist(client, unique_email):
     assert response.status_code == 404
 
 
-async def test_reveal_returns_503_when_apollo_credentials_missing(client, db_session, unique_email):
+async def test_reveal_returns_503_when_apollo_credentials_missing(client, db_session, unique_email, monkeypatch):
+    from app.core.config import get_settings
+
+    # A developer's real backend/.env (with a live APOLLO_API_KEY) is loaded
+    # into the process-wide cached Settings instance, so this can't rely on
+    # the key being ambiently unset — force it off for this test instead.
+    monkeypatch.setattr(get_settings(), "APOLLO_API_KEY", None)
+
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
     contact = await _make_apollo_sourced_contact(db_session, workspace_id)
-    # APOLLO_API_KEY is unset in the test environment, so build_provider
-    # (unpatched, real factory) returns None here.
 
     response = await client.post(
         f"/api/v1/leads/{contact.id}/reveal", params={"workspace_id": workspace_id}, headers=headers

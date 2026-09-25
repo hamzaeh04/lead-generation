@@ -19,7 +19,7 @@ async def workspace_api_keys_defaults(
     workspace_id: uuid.UUID,
     _membership=Depends(require_workspace_member),
 ):
-    """Placeholder text for the settings form (mirrors .env key names)."""
+    """Form placeholders — uses .env values when set, else generic hints."""
     return get_defaults()
 
 
@@ -29,9 +29,18 @@ async def get_workspace_api_keys(
     _membership=Depends(require_workspace_member),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """Return the single API-keys row for this workspace, or null if not set yet."""
-    row = await WorkspaceApiKeysService(session).get(workspace_id)
-    return to_read(row) if row is not None else None
+    """Return the workspace API-keys row.
+
+    Missing fields are filled from .env when present, then persisted, so the
+    Settings UI shows keys as set without a manual paste.
+    """
+    service = WorkspaceApiKeysService(session)
+    row = await service.get_or_seed_from_env(workspace_id)
+    if row is None:
+        return None
+    await session.commit()
+    await session.refresh(row)
+    return to_read(row)
 
 
 @router.put("", response_model=WorkspaceApiKeysRead)

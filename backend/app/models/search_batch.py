@@ -35,6 +35,16 @@ class SearchBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    #: SMTP mailbox used for auto draft→send after this batch is built.
+    email_setup_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("email_setups.id", ondelete="SET NULL"), nullable=True
+    )
+    #: Campaign created/used for the auto-send of this batch.
+    outreach_campaign_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True
+    )
+    #: idle | drafting | sending | completed | failed | skipped
+    outreach_status: Mapped[str] = mapped_column(String(32), default="idle", nullable=False)
 
     links: Mapped[list["SearchBatchContact"]] = relationship(
         back_populates="batch", cascade="all, delete-orphan"

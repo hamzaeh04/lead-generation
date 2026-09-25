@@ -20,6 +20,9 @@ class SearchBatchRead(BaseModel):
     companies_matched: int
     contacts_created: int
     contacts_matched: int
+    email_setup_id: uuid.UUID | None = None
+    outreach_campaign_id: uuid.UUID | None = None
+    outreach_status: str = "idle"
     created_at: datetime
 
 

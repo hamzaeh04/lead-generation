@@ -15,7 +15,8 @@ from app.schemas.search import (
     SearchExecuteResponse,
 )
 from app.services.prospect_prompt_service import ProspectPromptService
-from app.services.search_service import SearchService, qualify_contacts_in_background
+from app.services.search_service import SearchService
+from app.services.batch_outreach_service import qualify_then_outreach_in_background
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -90,15 +91,15 @@ async def execute_search(
         created_by=current_user.id,
     )
 
-    # Qualification runs after the response is sent (see
-    # qualify_contacts_in_background's docstring) so a large batch's AI
-    # scoring time never risks the request itself timing out.
+    # Qualification + auto draft/send run after the response is sent so a
+    # large batch never risks the HTTP request timing out.
     contact_ids = [contact.id for contact in result["contacts"]]
     if contact_ids:
         background_tasks.add_task(
-            qualify_contacts_in_background,
+            qualify_then_outreach_in_background,
             workspace_id=payload.workspace_id,
             contact_ids=contact_ids,
+            batch_id=result.get("batch_id"),
             settings=settings,
         )
 

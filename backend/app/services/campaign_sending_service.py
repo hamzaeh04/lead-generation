@@ -221,16 +221,28 @@ class CampaignSendingService:
         rendered_subject = render_template(subject_tpl, context).text
         rendered_body = render_template(body_tpl, context).text
 
-        # Open tracking: plain SMTP has no delivery/open telemetry of its
-        # own, so a tracking pixel is the only way to ever see the
-        # "opened" tick — skipped (send still goes out) if no public URL
-        # is configured for the pixel to point at, same fail-open
-        # convention as the rest of this app's optional integrations.
-        if self.settings.PUBLIC_BASE_URL:
-            pixel_url = (
-                f"{self.settings.PUBLIC_BASE_URL.rstrip('/')}/api/v1/track/open/{recipient.id}.png"
+        # Prefer a full AI draft when the template rendered empty but a
+        # generation exists (covers older campaign steps that don't use
+        # {{personalized_*}} placeholders yet).
+        if latest_personalization:
+            if not rendered_subject.strip() and latest_personalization.subject:
+                rendered_subject = latest_personalization.subject
+            if not rendered_body.strip() and latest_personalization.body:
+                rendered_body = latest_personalization.body
+
+        # Plain-text drafts become simple HTML so SMTP html_body still wraps.
+        if rendered_body and "<" not in rendered_body:
+            rendered_body = rendered_body.replace("\n", "<br>\n")
+
+        # Open tracking pixel — required for the Delivery double-tick.
+        # Prefer PUBLIC_BASE_URL; otherwise skip (send still succeeds).
+        public_base = (self.settings.PUBLIC_BASE_URL or "").rstrip("/")
+        if public_base:
+            pixel_url = f"{public_base}/api/v1/track/open/{recipient.id}.png"
+            rendered_body += (
+                f'<img src="{pixel_url}" width="1" height="1" alt="" '
+                f'style="display:none" />'
             )
-            rendered_body += f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none" />'
 
         message = OutboundEmail(
             to_email=contact.email,

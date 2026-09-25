@@ -135,15 +135,28 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Contact.status — the latter is a CRM pipeline stage the user can
         move by hand (e.g. to "won"), which would otherwise make the tick
         disappear even though the email genuinely was opened. Same
-        unloaded-relationship guard as company_name."""
-        if "campaign_recipients" in inspect(self).unloaded:
-            return None
-        if not self.campaign_recipients:
-            return None
-        statuses = {r.status for r in self.campaign_recipients}
-        if statuses & _EMAIL_OPENED_OR_BEYOND:
+        unloaded-relationship guard as company_name — with a CRM-status
+        fallback when recipients weren't eager-loaded so the Delivery
+        column still works on lighter payloads."""
+        if "campaign_recipients" not in inspect(self).unloaded and self.campaign_recipients:
+            statuses = {r.status for r in self.campaign_recipients}
+            if statuses & _EMAIL_OPENED_OR_BEYOND:
+                return "opened"
+            if statuses & _EMAIL_SENT_OR_BEYOND:
+                return "sent"
+
+        # Fallback when relationship wasn't loaded (or is empty after a
+        # stale cache): use CRM pipeline stages set by the send/open path.
+        if self.status in {
+            LeadStatus.OPENED,
+            LeadStatus.CLICKED,
+            LeadStatus.REPLIED,
+            LeadStatus.INTERESTED,
+            LeadStatus.MEETING,
+            LeadStatus.WON,
+        }:
             return "opened"
-        if statuses & _EMAIL_SENT_OR_BEYOND:
+        if self.status == LeadStatus.CONTACTED:
             return "sent"
         return None
 

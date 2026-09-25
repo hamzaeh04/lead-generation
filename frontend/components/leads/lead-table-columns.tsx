@@ -44,17 +44,19 @@ function GradeCell({ contact }: { contact: Contact }) {
 // it's been opened. Nothing to click — a passive status signal only.
 function EmailTicksCell({ contact }: { contact: Contact }) {
   const status = contact.email_track_status;
-  if (!status) return null;
+  if (!status) {
+    return <span className="text-fgSubtle" title="Not emailed yet">—</span>;
+  }
   if (status === "opened") {
     return (
-      <span className="inline-flex items-center text-accent" title="Sent and opened">
-        <CheckCheck className="h-4 w-4" />
+      <span className="inline-flex items-center" style={{ color: "#53bdeb" }} title="Sent and opened">
+        <CheckCheck className="h-4 w-4" strokeWidth={2.5} />
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center text-fgSubtle" title="Sent, not opened yet">
-      <Check className="h-4 w-4" />
+    <span className="inline-flex items-center text-fgMuted" title="Sent, not opened yet">
+      <Check className="h-4 w-4" strokeWidth={2.5} />
     </span>
   );
 }

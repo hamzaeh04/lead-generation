@@ -779,6 +779,9 @@ export interface SearchBatch {
   companies_matched: number;
   contacts_created: number;
   contacts_matched: number;
+  email_setup_id?: string | null;
+  outreach_campaign_id?: string | null;
+  outreach_status: string;
   created_at: string;
 }
 

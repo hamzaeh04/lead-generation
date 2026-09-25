@@ -19,6 +19,7 @@ SUPPORTED_VARIABLES = (
     "first_name", "last_name", "company_name", "job_title", "city",
     "industry", "website", "personalized_intro", "intent_signal",
     "outreach_angle", "unsubscribe_url",
+    "personalized_subject", "personalized_body",
 )
 
 _VARIABLE_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
@@ -29,13 +30,19 @@ def ensure_lead_personalization(subject: str, body: str) -> tuple[str, str]:
 
     Operators often paste static copy; when {{first_name}} is missing we inject
     it so every send is personalized from the contact record.
+    Skip injection when the template already uses a full AI draft
+    ({{personalized_subject}} / {{personalized_body}}).
     """
     personalized_subject = subject
-    if "{{first_name}}" not in subject and "{{last_name}}" not in subject:
+    if (
+        "{{personalized_subject}}" not in subject
+        and "{{first_name}}" not in subject
+        and "{{last_name}}" not in subject
+    ):
         personalized_subject = f"{{{{first_name}}}}, {subject}" if subject.strip() else "{{first_name}}"
 
     personalized_body = body
-    if "{{first_name}}" not in body:
+    if "{{personalized_body}}" not in body and "{{first_name}}" not in body:
         personalized_body = f"Hi {{{{first_name}}}},\n\n{body}" if body.strip() else "Hi {{first_name}},"
 
     return personalized_subject, personalized_body
@@ -72,9 +79,12 @@ def build_context(
             context["personalized_intro"] = personalization.opening_line
         if personalization.outreach_angle:
             context["outreach_angle"] = personalization.outreach_angle
-        # personalized_intro is derived from the AI generation, which itself
-        # only ever used real source data (see PersonalizationService) — so
-        # threading it through here doesn't reintroduce fabrication risk.
+        if personalization.subject:
+            context["personalized_subject"] = personalization.subject
+        if personalization.body:
+            context["personalized_body"] = personalization.body
+        # personalized_* fields are derived from the AI generation, which
+        # only ever used real source data (see PersonalizationService).
     if intent_signal and intent_signal.signal_text:
         context["intent_signal"] = intent_signal.signal_text
 

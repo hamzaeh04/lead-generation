@@ -52,10 +52,16 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
     // reload. Stops on its own once every lead has a score, so it doesn't
     // poll forever on a batch that's already fully settled.
     refetchInterval: (query) => {
-      const contacts = query.state.data?.contacts;
-      if (!contacts) return false;
-      const stillScoring = contacts.some((c) => c.latest_qualification === null);
-      return stillScoring ? 4000 : false;
+      const data = query.state.data;
+      if (!data) return false;
+      const stillScoring = data.contacts.some((c) => c.latest_qualification === null);
+      const stillOutreach = ["drafting", "sending"].includes(data.outreach_status);
+      const ageMs = Date.now() - new Date(data.created_at).getTime();
+      // New batches sit on "idle" until the background job starts — poll
+      // for a short window so Delivery ticks appear without a refresh.
+      const recentIdle = data.outreach_status === "idle" && ageMs < 10 * 60 * 1000;
+      if (stillScoring || stillOutreach || recentIdle) return 4000;
+      return false;
     },
   });
 
@@ -182,6 +188,12 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
           >
             <Gauge className="h-3.5 w-3.5" />
             {scoredLeads}/{totalLeads} scored
+          </span>
+          <span
+            className="rounded-md border border-border bg-surface2 px-2 py-1 text-xs capitalize text-fgMuted"
+            title="Auto draft + send pipeline for this batch"
+          >
+            Outreach: {batch.outreach_status.replace(/_/g, " ")}
           </span>
           <Button
             size="sm"

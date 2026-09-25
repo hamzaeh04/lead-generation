@@ -1,9 +1,11 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.health import router as health_router
 from app.api.unsubscribe import router as unsubscribe_router
@@ -26,6 +28,7 @@ from app.api.v1.workspaces import router as workspaces_router
 from app.core.config import get_settings
 from app.middleware.request_context import RequestContextMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.utils.db_errors import db_unavailable_payload, is_db_connectivity_error
 from app.utils.logging import configure_logging, get_logger
 from app.utils.metrics import PrometheusMiddleware
 
@@ -48,9 +51,44 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_exception_handler(_request: Request, exc: SQLAlchemyError):
+    if is_db_connectivity_error(exc):
+        logger.warning("database_unavailable", error=str(exc))
+        return JSONResponse(status_code=503, content={"detail": db_unavailable_payload(exc)})
+    logger.exception("sqlalchemy_error", error=str(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": {"error": "database_error", "issue": db_unavailable_payload(exc)["issue"]}},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_request: Request, exc: Exception):
+    from fastapi import HTTPException as FastAPIHTTPException
+    from fastapi.exceptions import RequestValidationError
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    # Let FastAPI/Starlette handle their own control-flow exceptions.
+    if isinstance(exc, (FastAPIHTTPException, StarletteHTTPException, RequestValidationError)):
+        raise exc
+
+    if is_db_connectivity_error(exc):
+        logger.warning("database_unavailable", error=str(exc))
+        return JSONResponse(status_code=503, content={"detail": db_unavailable_payload(exc)})
+    logger.exception("unhandled_error", error=str(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": {"error": "internal_server_error", "issue": str(exc)[:800]}},
+    )
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    # Production frontends / previews on Vercel (e.g. lead-generation-frontend-*.vercel.app)
+    allow_origin_regex=r"https://([a-z0-9-]+\.)?vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

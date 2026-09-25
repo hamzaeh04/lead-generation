@@ -1,9 +1,11 @@
 """Builds a concrete provider instance for a (provider name, category) pair.
 
-Returns None when the required API key isn't configured — callers turn
-that into a clear "provider not configured" response rather than a crash.
-This is the one place in the codebase that knows about concrete provider
-classes; everything else depends only on the ABCs in app/providers/base.py.
+Credentials resolve in order:
+1. Workspace row in `workspace_api_keys` (Settings UI), when a workspace is known
+2. Process env / Settings (.env / Vercel env vars)
+
+Returns None when no key is available — callers turn that into a clear
+"provider not configured" response rather than a crash.
 
 Active builders: Apollo (company + person discovery), Smartlead (person
 discovery via campaign leads), Anthropic (AI personalization). OpenAI and
@@ -15,7 +17,12 @@ outright rather than staying around as an inert alternative.
 """
 from __future__ import annotations
 
+import uuid
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import Settings
+from app.models.workspace_api_keys import WorkspaceApiKeys
 from app.providers.ai.anthropic_provider import AnthropicProvider
 # from app.providers.ai.openai_provider import OpenAIProvider
 from app.providers.base import BaseProvider, ProviderCategory, ProviderUnavailableError
@@ -23,6 +30,7 @@ from app.providers.base import BaseProvider, ProviderCategory, ProviderUnavailab
 from app.providers.lead_sources.apollo_provider import ApolloCompanyDiscoveryProvider
 from app.providers.people_sources.apollo_provider import ApolloPersonDiscoveryProvider
 from app.providers.people_sources.smartlead_provider import SmartleadPersonDiscoveryProvider
+from app.repositories.workspace_api_keys_repository import WorkspaceApiKeysRepository
 
 _BUILDERS: dict[tuple[str, ProviderCategory], tuple[str | None, type]] = {
     ("apollo", ProviderCategory.COMPANY_DISCOVERY): ("APOLLO_API_KEY", ApolloCompanyDiscoveryProvider),
@@ -47,6 +55,13 @@ _ENV_VARS: dict[str, str] = {
     "smtp": "SMTP_HOST",
 }
 
+# Workspace DB column for each provider (Settings → Provider API keys).
+_DB_KEY_FIELDS: dict[str, str] = {
+    "apollo": "apollo_api_key",
+    "smartlead": "smartlead_api_key",
+    "anthropic": "anthropic_api_key",
+}
+
 
 def required_env_var(provider_name: str, category: ProviderCategory) -> str | None:
     entry = _BUILDERS.get((provider_name, category))
@@ -55,8 +70,32 @@ def required_env_var(provider_name: str, category: ProviderCategory) -> str | No
     return _ENV_VARS.get(provider_name)
 
 
+def resolve_api_key(
+    provider_name: str,
+    settings: Settings,
+    workspace_keys: WorkspaceApiKeys | None = None,
+) -> str | None:
+    """Prefer workspace DB key; fall back to .env / process settings."""
+    field = _DB_KEY_FIELDS.get(provider_name)
+    if workspace_keys is not None and field:
+        db_value = getattr(workspace_keys, field, None)
+        if isinstance(db_value, str) and db_value.strip():
+            return db_value.strip()
+
+    env_var = _ENV_VARS.get(provider_name)
+    if env_var:
+        env_value = getattr(settings, env_var, None)
+        if isinstance(env_value, str) and env_value.strip():
+            return env_value.strip()
+    return None
+
+
 def build_provider(
-    provider_name: str, category: ProviderCategory, settings: Settings
+    provider_name: str,
+    category: ProviderCategory,
+    settings: Settings,
+    *,
+    api_key: str | None = None,
 ) -> BaseProvider | None:
     entry = _BUILDERS.get((provider_name, category))
     if entry is None:
@@ -65,15 +104,25 @@ def build_provider(
     if env_var is None:
         return provider_cls()
 
-    # SMTP and OpenAI builders were here (needed non-standard construction:
-    # SMTP takes host/port/username/password, OpenAI takes a model) — both
-    # commented out above along with their _BUILDERS entries, so the
-    # branches that referenced them are removed too. Restore alongside the
-    # imports/_BUILDERS entries if re-enabling either provider.
-
-    api_key = getattr(settings, env_var, None)
-    if not api_key:
+    # Explicit api_key (already resolved from DB/.env) wins; otherwise env only.
+    key = api_key if api_key is not None else getattr(settings, env_var, None)
+    if isinstance(key, str):
+        key = key.strip() or None
+    if not key:
         return None
     if provider_cls is AnthropicProvider:
-        return AnthropicProvider(api_key=api_key, model=settings.ANTHROPIC_MODEL)
-    return provider_cls(api_key=api_key)
+        return AnthropicProvider(api_key=key, model=settings.ANTHROPIC_MODEL)
+    return provider_cls(api_key=key)
+
+
+async def build_provider_for_workspace(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    provider_name: str,
+    category: ProviderCategory,
+    settings: Settings,
+) -> BaseProvider | None:
+    """Load workspace_api_keys then build with DB → .env credential resolution."""
+    row = await WorkspaceApiKeysRepository(session).get_for_workspace(workspace_id)
+    api_key = resolve_api_key(provider_name, settings, row)
+    return build_provider(provider_name, category, settings, api_key=api_key)

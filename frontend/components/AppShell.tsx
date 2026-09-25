@@ -40,8 +40,8 @@ import { useWorkspace } from "@/lib/workspace-context";
 
 const primaryNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/leads", label: "Leads", icon: Users },
   { href: "/discover", label: "Discover", icon: Search },
+  { href: "/leads", label: "Leads", icon: Users },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/suppressions", label: "Suppressions", icon: ShieldOff },
 ];

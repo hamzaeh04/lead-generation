@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select
 
@@ -74,8 +75,8 @@ async def _run_search(client, db_session, headers, workspace_id, monkeypatch, *,
         await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.search_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubPersonDiscoveryProvider(),
+        "app.services.search_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubPersonDiscoveryProvider()),
     )
 
     return await client.post(
@@ -202,8 +203,8 @@ async def test_zero_result_search_creates_no_batch(client, db_session, unique_em
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.search_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _EmptyPersonDiscoveryProvider(),
+        "app.services.search_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_EmptyPersonDiscoveryProvider()),
     )
 
     response = await client.post(
@@ -269,7 +270,7 @@ async def test_search_execute_auto_qualifies_new_leads(client, db_session, uniqu
                 source_fields_used=list(request.source_fields.keys()),
             )
 
-    def _build_provider(provider_name, category, settings):
+    async def _build_provider(session, workspace_id, provider_name, category, settings):
         return _StubAIProvider() if provider_name == "anthropic" else _StubPersonDiscoveryProvider()
 
     class _SharedSessionContextManager:
@@ -290,7 +291,7 @@ async def test_search_execute_auto_qualifies_new_leads(client, db_session, uniqu
     # search_service and lead_qualification_service both `from app.services
     # import provider_factory` — same module object either way, so one
     # patch (dispatching on provider_name) covers both call sites.
-    monkeypatch.setattr("app.services.provider_factory.build_provider", _build_provider)
+    monkeypatch.setattr("app.services.provider_factory.build_provider_for_workspace", _build_provider)
     monkeypatch.setattr("app.services.lead_qualification_service._BATCH_PACING_SECONDS", 0)
     monkeypatch.setattr(
         "app.services.search_service.AsyncSessionLocal", lambda: _SharedSessionContextManager()
@@ -370,8 +371,8 @@ async def test_search_execute_auto_reveals_apollo_leads_but_not_phone(
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubApolloDiscoveryProvider(),
+        "app.services.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubApolloDiscoveryProvider()),
     )
 
     response = await client.post(
@@ -424,8 +425,8 @@ async def test_reveal_all_in_batch_skips_already_revealed(client, db_session, un
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.lead_reveal_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubApolloRevealProvider(),
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubApolloRevealProvider()),
     )
 
     already_revealed = Contact(

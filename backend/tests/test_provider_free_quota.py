@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import pytest
 
 from app.models.provider_config import ProviderConfig
@@ -45,8 +46,8 @@ async def test_provider_health_reports_quota_remaining(client, db_session, uniqu
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.search_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubProvider(),
+        "app.services.search_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubProvider()),
     )
 
     for _ in range(3):

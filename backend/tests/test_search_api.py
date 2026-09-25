@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import json
 
 import pytest
@@ -80,8 +81,8 @@ async def test_search_execute_with_stub_provider_persists_results(
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.search_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubCompanyDiscoveryProvider(),
+        "app.services.search_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubCompanyDiscoveryProvider()),
     )
 
     response = await client.post(
@@ -124,8 +125,8 @@ async def test_search_execute_matched_company_serializes_correctly(
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.search_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubCompanyDiscoveryProvider(),
+        "app.services.search_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubCompanyDiscoveryProvider()),
     )
 
     payload = {
@@ -165,13 +166,6 @@ async def test_search_execute_rejects_disabled_provider(client, unique_email):
 
 
 async def test_search_execute_reports_missing_credentials(client, db_session, unique_email, monkeypatch):
-    from app.core.config import get_settings
-
-    # A developer's real backend/.env (with a live APOLLO_API_KEY) is loaded
-    # into the process-wide cached Settings instance, so this can't rely on
-    # the key being ambiently unset — force it off for this test instead.
-    monkeypatch.setattr(get_settings(), "APOLLO_API_KEY", None)
-
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
     db_session.add(
@@ -182,7 +176,15 @@ async def test_search_execute_reports_missing_credentials(client, db_session, un
     await db_session.commit()
 
     # The registry allows the provider, but the factory can't build a
-    # working instance without credentials.
+    # working instance without credentials — forced directly rather than
+    # relying on APOLLO_API_KEY being ambiently unset, since a developer's
+    # real backend/.env (with a live key) is loaded into the process-wide
+    # cached Settings instance and would otherwise make this flaky.
+    monkeypatch.setattr(
+        "app.services.search_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=None),
+    )
+
     response = await client.post(
         "/api/v1/search/execute",
         json={
@@ -243,8 +245,8 @@ async def test_parse_prompt_splits_known_fields_from_extra_filters(client, db_se
         "department": ["Sales"],  # smartlead-only field -> extra_filters
     }
     monkeypatch.setattr(
-        "app.services.prospect_prompt_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider(ai_response),
+        "app.services.prospect_prompt_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider(ai_response)),
     )
 
     response = await client.post(
@@ -284,8 +286,8 @@ async def test_parse_prompt_coerces_ai_type_drift_instead_of_failing(
         "job_titles": "owner",
     }
     monkeypatch.setattr(
-        "app.services.prospect_prompt_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider(ai_response),
+        "app.services.prospect_prompt_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider(ai_response)),
     )
 
     response = await client.post(
@@ -312,8 +314,8 @@ async def test_parse_prompt_never_invents_fields_the_ai_omitted(client, db_sessi
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.prospect_prompt_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider({"job_titles": ["Founder"]}),
+        "app.services.prospect_prompt_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider({"job_titles": ["Founder"]})),
     )
 
     response = await client.post(
@@ -350,8 +352,8 @@ async def test_parse_prompt_returns_502_when_ai_output_is_invalid(client, db_ses
 
     # employee_count_min must be an int — the AI hallucinated a string.
     monkeypatch.setattr(
-        "app.services.prospect_prompt_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubAIProvider({"employee_count_min": "a lot"}),
+        "app.services.prospect_prompt_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider({"employee_count_min": "a lot"})),
     )
 
     response = await client.post(
@@ -366,19 +368,19 @@ async def test_parse_prompt_returns_502_when_ai_output_is_invalid(client, db_ses
 async def test_parse_prompt_returns_503_when_no_ai_provider_has_credentials(
     client, db_session, unique_email, monkeypatch
 ):
-    from app.core.config import get_settings
-
-    # A developer's real backend/.env (with a live ANTHROPIC_API_KEY) is
-    # loaded into the process-wide cached Settings instance, so this can't
-    # rely on the key being ambiently unset — force it off for this test.
-    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", None)
-
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
     db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
+
     # The registry allows the provider, but the factory can't build a
-    # working instance without credentials.
+    # working instance without credentials — forced directly rather than
+    # relying on ANTHROPIC_API_KEY being ambiently unset (see the other
+    # missing-credentials test above for why that was flaky).
+    monkeypatch.setattr(
+        "app.services.prospect_prompt_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=None),
+    )
 
     response = await client.post(
         "/api/v1/search/parse-prompt",
@@ -412,8 +414,8 @@ async def test_parse_prompt_returns_502_when_ai_provider_errors(client, db_sessi
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.prospect_prompt_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _FailingAIProvider(),
+        "app.services.prospect_prompt_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_FailingAIProvider()),
     )
 
     response = await client.post(

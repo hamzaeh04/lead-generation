@@ -249,7 +249,9 @@ class LeadQualificationService:
         missing_credentials: list[str] = []
         last_error: str | None = None
         for registry_entry in registry_entries:
-            provider = provider_factory.build_provider(registry_entry.provider, ProviderCategory.AI, self.settings)
+            provider = await provider_factory.build_provider_for_workspace(
+                self.session, workspace_id, registry_entry.provider, ProviderCategory.AI, self.settings
+            )
             if provider is None:
                 missing_credentials.append(registry_entry.provider)
                 continue

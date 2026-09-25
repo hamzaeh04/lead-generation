@@ -61,11 +61,8 @@ const roleTone: Record<WorkspaceRole, "success" | "accent" | "muted"> = {
 
 const FALLBACK_KEY_DEFAULTS: WorkspaceApiKeysDefaults = {
   apollo_api_key: "your-apollo-api-key",
-  pdl_api_key: "your-pdl-api-key",
-  serpapi_api_key: "your-serpapi-api-key",
-  apify_api_token: "your-apify-api-token",
-  phantombuster_api_key: "your-phantombuster-api-key",
-  hunter_api_key: "your-hunter-api-key",
+  smartlead_api_key: "your-smartlead-api-key",
+  anthropic_api_key: "your-anthropic-api-key",
 };
 
 type ApiKeyField = keyof WorkspaceApiKeysDefaults;
@@ -74,13 +71,7 @@ const API_KEY_FIELDS: {
   key: ApiKeyField;
   label: string;
   envName: string;
-  hasFlag:
-    | "has_apollo_api_key"
-    | "has_pdl_api_key"
-    | "has_serpapi_api_key"
-    | "has_apify_api_token"
-    | "has_phantombuster_api_key"
-    | "has_hunter_api_key";
+  hasFlag: "has_apollo_api_key" | "has_smartlead_api_key" | "has_anthropic_api_key";
   hint: string;
 }[] = [
   {
@@ -91,50 +82,26 @@ const API_KEY_FIELDS: {
     hint: "Company / person discovery via Apollo.",
   },
   {
-    key: "pdl_api_key",
-    label: "People Data Labs",
-    envName: "PDL_API_KEY",
-    hasFlag: "has_pdl_api_key",
-    hint: "Person and company enrichment.",
+    key: "smartlead_api_key",
+    label: "Smartlead",
+    envName: "SMARTLEAD_API_KEY",
+    hasFlag: "has_smartlead_api_key",
+    hint: "SmartProspect search and campaign lead pull.",
   },
   {
-    key: "serpapi_api_key",
-    label: "SerpApi",
-    envName: "SERPAPI_API_KEY",
-    hasFlag: "has_serpapi_api_key",
-    hint: "Google / Maps style discovery searches.",
-  },
-  {
-    key: "apify_api_token",
-    label: "Apify",
-    envName: "APIFY_API_TOKEN",
-    hasFlag: "has_apify_api_token",
-    hint: "Actor-based scrapers and enrichers.",
-  },
-  {
-    key: "phantombuster_api_key",
-    label: "PhantomBuster",
-    envName: "PHANTOMBUSTER_API_KEY",
-    hasFlag: "has_phantombuster_api_key",
-    hint: "LinkedIn / social automation phantoms.",
-  },
-  {
-    key: "hunter_api_key",
-    label: "Hunter",
-    envName: "HUNTER_API_KEY",
-    hasFlag: "has_hunter_api_key",
-    hint: "Email discovery and verification.",
+    key: "anthropic_api_key",
+    label: "Anthropic",
+    envName: "ANTHROPIC_API_KEY",
+    hasFlag: "has_anthropic_api_key",
+    hint: "AI prompt parsing and personalization.",
   },
 ];
 
 function emptyKeyForm(): Record<ApiKeyField, string> {
   return {
     apollo_api_key: "",
-    pdl_api_key: "",
-    serpapi_api_key: "",
-    apify_api_token: "",
-    phantombuster_api_key: "",
-    hunter_api_key: "",
+    smartlead_api_key: "",
+    anthropic_api_key: "",
   };
 }
 

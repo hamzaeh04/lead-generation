@@ -69,8 +69,12 @@ class DecisionMakerService:
 
         missing_credentials: list[str] = []
         for registry_entry in registry_entries:
-            provider = provider_factory.build_provider(
-                registry_entry.provider, ProviderCategory.PERSON_DISCOVERY, self.settings
+            provider = await provider_factory.build_provider_for_workspace(
+                self.session,
+                workspace_id,
+                registry_entry.provider,
+                ProviderCategory.PERSON_DISCOVERY,
+                self.settings,
             )
             if provider is None:
                 missing_credentials.append(registry_entry.provider)

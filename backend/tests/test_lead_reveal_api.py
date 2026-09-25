@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import uuid
 
 import pytest
@@ -73,8 +74,8 @@ async def test_reveal_enriches_contact_and_its_company(client, db_session, uniqu
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.lead_reveal_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubRevealProvider(
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubRevealProvider(
             {
                 "first_name": "Larry",
                 "last_name": "Fink",
@@ -101,7 +102,7 @@ async def test_reveal_enriches_contact_and_its_company(client, db_session, uniqu
                     "country": "United States",
                 },
             }
-        ),
+        )),
     )
 
     response = await client.post(
@@ -130,10 +131,10 @@ async def test_reveal_updates_contact_and_returns_revealed_true(client, db_sessi
     contact = await _make_apollo_sourced_contact(db_session, workspace_id)
 
     monkeypatch.setattr(
-        "app.services.lead_reveal_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubRevealProvider(
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubRevealProvider(
             {"first_name": "Jordan", "last_name": "Alvarez", "full_name": "Jordan Alvarez", "email": "jordan@acme.example", "phone": "+15550100001"}
-        ),
+        )),
     )
 
     response = await client.post(
@@ -174,8 +175,8 @@ async def test_reveal_works_for_smartlead_source_with_filter_id(
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.lead_reveal_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubRevealProvider(
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubRevealProvider(
             {
                 "first_name": "Locked",
                 "last_name": "Lead",
@@ -185,7 +186,7 @@ async def test_reveal_works_for_smartlead_source_with_filter_id(
                 "phone": None,
                 "linkedin_url": "https://linkedin.com/in/lockedlead",
             }
-        ),
+        )),
     )
 
     response = await client.post(
@@ -207,8 +208,8 @@ async def test_reveal_returns_revealed_false_when_provider_finds_nothing(
     contact = await _make_apollo_sourced_contact(db_session, workspace_id)
 
     monkeypatch.setattr(
-        "app.services.lead_reveal_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubRevealProvider(None),
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubRevealProvider(None)),
     )
 
     response = await client.post(
@@ -235,10 +236,10 @@ async def test_reveal_reports_false_when_only_a_non_email_field_is_found(
     contact = await _make_apollo_sourced_contact(db_session, workspace_id)
 
     monkeypatch.setattr(
-        "app.services.lead_reveal_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubRevealProvider(
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubRevealProvider(
             {"first_name": None, "last_name": "Alvarez", "full_name": None, "email": None, "phone": None}
-        ),
+        )),
     )
 
     response = await client.post(
@@ -265,13 +266,13 @@ async def test_reveal_refuses_second_attempt_after_first_found_no_email(
 
     call_count = 0
 
-    def build_provider(provider_name, category, settings):
+    async def build_provider(provider_name, category, settings, *args, **kwargs):
         nonlocal call_count
         call_count += 1
         return _StubRevealProvider(None)
 
     monkeypatch.setattr(
-        "app.services.lead_reveal_service.provider_factory.build_provider", build_provider
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace", build_provider
     )
 
     first = await client.post(
@@ -297,13 +298,13 @@ async def test_reveal_skips_provider_when_email_already_known(
 
     called = False
 
-    def build_provider(provider_name, category, settings):
+    async def build_provider(provider_name, category, settings, *args, **kwargs):
         nonlocal called
         called = True
         return _StubRevealProvider({"email": "should-not-be-used@example.com"})
 
     monkeypatch.setattr(
-        "app.services.lead_reveal_service.provider_factory.build_provider", build_provider
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace", build_provider
     )
 
     response = await client.post(
@@ -402,15 +403,16 @@ async def test_reveal_404_when_contact_does_not_exist(client, unique_email):
 
 
 async def test_reveal_returns_503_when_apollo_credentials_missing(client, db_session, unique_email, monkeypatch):
-    from app.core.config import get_settings
-
-    # A developer's real backend/.env (with a live APOLLO_API_KEY) is loaded
-    # into the process-wide cached Settings instance, so this can't rely on
-    # the key being ambiently unset — force it off for this test instead.
-    monkeypatch.setattr(get_settings(), "APOLLO_API_KEY", None)
-
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
     contact = await _make_apollo_sourced_contact(db_session, workspace_id)
+    # Forced directly rather than relying on APOLLO_API_KEY being ambiently
+    # unset — a developer's real backend/.env (with a live key) is loaded
+    # into the process-wide cached Settings instance and would otherwise
+    # make this flaky.
+    monkeypatch.setattr(
+        "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=None),
+    )
 
     response = await client.post(
         f"/api/v1/leads/{contact.id}/reveal", params={"workspace_id": workspace_id}, headers=headers

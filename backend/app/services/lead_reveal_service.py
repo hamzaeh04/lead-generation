@@ -82,14 +82,19 @@ class LeadRevealService:
                 status.HTTP_404_NOT_FOUND, "This lead has no source that supports revealing details"
             )
 
-        provider = provider_factory.build_provider(
-            source.provider, ProviderCategory.PERSON_DISCOVERY, self.settings
+        provider = await provider_factory.build_provider_for_workspace(
+            self.session,
+            workspace_id,
+            source.provider,
+            ProviderCategory.PERSON_DISCOVERY,
+            self.settings,
         )
         if provider is None:
             env_var = provider_factory.required_env_var(source.provider, ProviderCategory.PERSON_DISCOVERY)
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
-                f"Provider '{source.provider}' credentials not configured (set {env_var}).",
+                f"Provider '{source.provider}' credentials not configured "
+                f"(save in Settings → Provider API keys, or set {env_var}).",
             )
 
         try:

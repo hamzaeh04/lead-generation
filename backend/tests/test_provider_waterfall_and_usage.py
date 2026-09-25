@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 """Phase 6: cost tracking/health instrumentation for provider calls."""
 import pytest
 
@@ -44,8 +45,8 @@ async def test_provider_usage_recorded_for_search_execute(client, db_session, un
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.search_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubProvider(),
+        "app.services.search_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubProvider()),
     )
 
     await client.post(

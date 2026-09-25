@@ -12,11 +12,8 @@ class WorkspaceApiKeysUpsert(BaseModel):
     """
 
     apollo_api_key: str | None = Field(default=None, max_length=512)
-    pdl_api_key: str | None = Field(default=None, max_length=512)
-    serpapi_api_key: str | None = Field(default=None, max_length=512)
-    apify_api_token: str | None = Field(default=None, max_length=512)
-    phantombuster_api_key: str | None = Field(default=None, max_length=512)
-    hunter_api_key: str | None = Field(default=None, max_length=512)
+    smartlead_api_key: str | None = Field(default=None, max_length=512)
+    anthropic_api_key: str | None = Field(default=None, max_length=512)
 
 
 class WorkspaceApiKeysRead(BaseModel):
@@ -27,11 +24,8 @@ class WorkspaceApiKeysRead(BaseModel):
     id: uuid.UUID
     workspace_id: uuid.UUID
     has_apollo_api_key: bool = False
-    has_pdl_api_key: bool = False
-    has_serpapi_api_key: bool = False
-    has_apify_api_token: bool = False
-    has_phantombuster_api_key: bool = False
-    has_hunter_api_key: bool = False
+    has_smartlead_api_key: bool = False
+    has_anthropic_api_key: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -40,8 +34,5 @@ class WorkspaceApiKeysDefaults(BaseModel):
     """UI placeholders matching .env provider key names."""
 
     apollo_api_key: str = "your-apollo-api-key"
-    pdl_api_key: str = "your-pdl-api-key"
-    serpapi_api_key: str = "your-serpapi-api-key"
-    apify_api_token: str = "your-apify-api-token"
-    phantombuster_api_key: str = "your-phantombuster-api-key"
-    hunter_api_key: str = "your-hunter-api-key"
+    smartlead_api_key: str = "your-smartlead-api-key"
+    anthropic_api_key: str = "your-anthropic-api-key"

@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import uuid
 
 import pytest
@@ -86,8 +87,8 @@ async def test_decision_makers_persists_and_returns_contact(client, db_session, 
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.decision_maker_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _StubDecisionMakerProvider(),
+        "app.services.decision_maker_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubDecisionMakerProvider()),
     )
 
     response = await client.post(
@@ -158,8 +159,8 @@ async def test_decision_makers_missing_credentials_returns_503(client, db_sessio
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.decision_maker_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: None,
+        "app.services.decision_maker_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=None),
     )
 
     response = await client.post(
@@ -191,9 +192,13 @@ async def test_decision_makers_falls_back_to_next_provider_after_failure(
     await db_session.commit()
 
     providers = {"stub-fail": _FailingDecisionMakerProvider(), "stub": _StubDecisionMakerProvider()}
+
+    async def _build(session, workspace_id, provider_name, category, settings):
+        return providers[provider_name]
+
     monkeypatch.setattr(
-        "app.services.decision_maker_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: providers[provider_name],
+        "app.services.decision_maker_service.provider_factory.build_provider_for_workspace",
+        _build,
     )
 
     response = await client.post(
@@ -225,8 +230,8 @@ async def test_decision_makers_empty_result_is_not_an_error(client, db_session, 
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.decision_maker_service.provider_factory.build_provider",
-        lambda provider_name, category, settings: _EmptyDecisionMakerProvider(),
+        "app.services.decision_maker_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_EmptyDecisionMakerProvider()),
     )
 
     response = await client.post(

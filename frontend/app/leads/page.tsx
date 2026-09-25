@@ -102,7 +102,7 @@ function LeadsContent() {
       )}
 
       {batches.length > 0 && (
-        <Card className="flex flex-col divide-y divide-border p-0">
+        <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
           {batches.map((batch) => (
             <BatchRow key={batch.id} batch={batch} />
           ))}

@@ -18,8 +18,20 @@ if config.config_file_name is not None:
 
 settings = get_settings()
 # Alembic runs migrations synchronously; swap the async driver for psycopg2.
+# App Settings maps Neon sslmode→ssl for asyncpg; psycopg2 needs sslmode back.
 sync_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+_parsed = urlparse(sync_url)
+_query: list[tuple[str, str]] = []
+for key, value in parse_qsl(_parsed.query, keep_blank_values=True):
+    if key.lower() == "ssl":
+        _query.append(("sslmode", "require" if value in {"1", "true", "require"} else value))
+    else:
+        _query.append((key, value))
+sync_url = urlunparse(_parsed._replace(query=urlencode(_query)))
 config.set_main_option("sqlalchemy.url", sync_url)
+
 
 target_metadata = Base.metadata
 

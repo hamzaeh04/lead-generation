@@ -340,7 +340,7 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
                 </Button>
               </form>
               {notesQuery.data && notesQuery.data.length > 0 ? (
-                <Card className="flex flex-col divide-y divide-border p-0">
+                <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
                   {notesQuery.data.map((note) => (
                     <div key={note.id} className="flex flex-col gap-1 px-4 py-3">
                       <p className="text-base text-fg">{note.text}</p>
@@ -373,7 +373,7 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
                 </Button>
               </form>
               {tasksQuery.data && tasksQuery.data.length > 0 ? (
-                <Card className="flex flex-col divide-y divide-border p-0">
+                <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
                   {tasksQuery.data.map((task) => (
                     <label key={task.id} className="flex items-center gap-3 px-4 py-3">
                       <Checkbox

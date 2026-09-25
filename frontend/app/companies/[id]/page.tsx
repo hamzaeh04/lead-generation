@@ -233,7 +233,7 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
             )}
 
             {contactsQuery.data && contactsQuery.data.length > 0 ? (
-              <Card className="flex flex-col divide-y divide-border p-0">
+              <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
                 {contactsQuery.data.map((contact) => (
                   <ContactRow key={contact.id} contact={contact} />
                 ))}
@@ -246,7 +246,7 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
 
         <TabsContent value="signals">
           {intentQuery.data && intentQuery.data.signals.length > 0 ? (
-            <Card className="flex flex-col divide-y divide-border p-0">
+            <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
               {intentQuery.data.signals.map((signal) => (
                 <div key={signal.id} className="flex flex-col gap-1 px-4 py-3">
                   <div className="flex items-center justify-between">
@@ -267,7 +267,7 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
 
         <TabsContent value="sources">
           {sourcesQuery.data && sourcesQuery.data.length > 0 ? (
-            <Card className="flex flex-col divide-y divide-border p-0">
+            <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
               {sourcesQuery.data.map((source) => (
                 <div key={source.id} className="flex items-center justify-between gap-3 px-4 py-3 text-base">
                   <span className="font-mono text-fg">{source.provider}</span>

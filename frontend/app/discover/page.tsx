@@ -54,13 +54,19 @@ function ProviderCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex items-start gap-3 rounded-xl border p-4 text-left shadow-card transition-all",
+        "provider-card-3d group flex items-start gap-3 rounded-xl border p-4 text-left",
         active
           ? "border-accent bg-accentSoft"
-          : "border-border bg-surface hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-popover"
+          : "border-border bg-surface hover:border-accent/50"
       )}
     >
-      <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white", info.badgeClass)}>
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white transition-transform duration-300",
+          "group-hover:scale-110 group-hover:-rotate-3",
+          info.badgeClass
+        )}
+      >
         <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0 flex-1">
@@ -196,7 +202,7 @@ function DiscoverContent() {
               {results.companies.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <h3 className="text-sm font-semibold text-fgMuted">Companies (found via these contacts)</h3>
-                  <Card className="flex flex-col divide-y divide-border p-0">
+                  <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
                     {results.companies.map((company) => (
                       <Link
                         key={company.id}
@@ -214,7 +220,7 @@ function DiscoverContent() {
               {results.contacts.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <h3 className="text-sm font-semibold text-fgMuted">Contacts</h3>
-                  <Card className="flex flex-col divide-y divide-border p-0">
+                  <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
                     {results.contacts.map((contact) => (
                       <ContactResultRow key={contact.id} contact={contact} />
                     ))}

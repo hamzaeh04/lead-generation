@@ -1,3 +1,5 @@
+"use client";
+
 import { type LucideIcon, TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Card } from "@/components/ui/Card";
@@ -33,12 +35,13 @@ export function StatCard({
   className?: string;
 }) {
   return (
-    <Card className={cn("flex flex-col gap-2 p-4", className)}>
+    <Card className={cn("stat-card group flex animate-card-rise flex-col gap-2 p-4", className)}>
       <div className="flex items-center justify-between">
-        <span className="text-sm text-fgMuted">{label}</span>
+        <span className="text-sm text-fgMuted transition-colors group-hover:text-fg">{label}</span>
         {Icon && (
           <span
             className={cn(
+              "transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-110",
               tone
                 ? cn("flex h-7 w-7 items-center justify-center rounded-lg", toneBadgeClasses[tone])
                 : "text-fgSubtle"
@@ -49,7 +52,9 @@ export function StatCard({
         )}
       </div>
       <div className="flex items-end justify-between gap-2">
-        <span className="font-mono text-3xl font-semibold tabular-nums text-fg">{value}</span>
+        <span className="font-mono text-3xl font-semibold tabular-nums text-fg transition-transform duration-300 group-hover:translate-x-0.5">
+          {value}
+        </span>
         {trend !== undefined && (
           <span
             className={cn(

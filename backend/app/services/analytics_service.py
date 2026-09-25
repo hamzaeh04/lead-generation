@@ -85,6 +85,8 @@ class AnalyticsService:
             replied=replied,
             delivery_rate=round(delivered / sent, 4) if sent else None,
             bounce_rate=round(bounced / sent, 4) if sent else None,
+            open_rate=round(opened / sent, 4) if sent else None,
+            click_rate=round(clicked / sent, 4) if sent else None,
             reply_rate=round(replied / sent, 4) if sent else None,
             total_provider_cost=total_cost,
             cost_per_verified_lead=round(total_cost / verified_emails, 4) if verified_emails else None,

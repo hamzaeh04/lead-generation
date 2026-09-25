@@ -93,7 +93,7 @@ function AdminContent() {
           .
         </p>
         {providersQuery.data && providersQuery.data.length > 0 ? (
-          <Card className="flex flex-col divide-y divide-border p-0">
+          <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
             {providersQuery.data.map((p) => (
               <div key={`${p.provider}:${p.category}`} className="flex items-center justify-between gap-3 px-4 py-3 text-base">
                 <span className="font-mono font-medium text-fg">{p.provider}</span>

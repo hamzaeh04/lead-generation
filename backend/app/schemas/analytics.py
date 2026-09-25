@@ -35,6 +35,8 @@ class AnalyticsOverview(BaseModel):
     replied: int
     delivery_rate: float | None
     bounce_rate: float | None
+    open_rate: float | None
+    click_rate: float | None
     reply_rate: float | None
     positive_reply_rate: None = None  # not computable — no reply sentiment classification exists
 

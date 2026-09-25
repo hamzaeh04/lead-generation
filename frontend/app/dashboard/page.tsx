@@ -7,9 +7,9 @@ import {
   DollarSign,
   Handshake,
   Mail,
+  MousePointerClick,
   Percent,
   Search,
-  Sparkles,
   Trophy,
   Users2,
 } from "lucide-react";
@@ -41,16 +41,16 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="group flex items-center gap-3.5 rounded-xl border border-border bg-surface p-4 shadow-card transition-all hover:-translate-y-0.5 hover:border-accent hover:shadow-popover"
+      className="quick-link-3d group flex items-center gap-3.5 rounded-xl border border-border bg-surface p-4"
     >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accentSoft text-accent">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accentSoft text-accent transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3">
         <Icon className="h-4.5 w-4.5" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-base font-medium text-fg">{label}</span>
         <span className="truncate text-sm text-fgMuted">{description}</span>
       </span>
-      <ArrowRight className="h-4 w-4 shrink-0 text-fgSubtle transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
+      <ArrowRight className="h-4 w-4 shrink-0 text-fgSubtle transition-transform duration-300 group-hover:translate-x-1 group-hover:text-accent" />
     </Link>
   );
 }
@@ -141,7 +141,7 @@ function DashboardContent() {
       {overview && (
         <>
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Companies" value={overview.total_companies} icon={Building2} tone="accent" />
+            <StatCard label="Leads" value={overview.total_companies} icon={Building2} tone="accent" />
             <StatCard label="Contacts" value={overview.total_contacts} icon={Users2} tone="accent" />
             <StatCard
               label="Contactable"
@@ -150,16 +150,29 @@ function DashboardContent() {
               tone="success"
               hint="have an email on file"
             />
-            <StatCard
-              label="High-intent leads"
-              value={overview.high_intent_leads}
-              icon={Sparkles}
-              tone="warning"
-              hint="intent score ≥ 50"
-            />
             <StatCard label="Meetings" value={overview.meetings} icon={Handshake} tone="accent" />
             <StatCard label="Won" value={overview.conversions} icon={Trophy} tone="success" />
-            <StatCard label="Reply rate" value={formatPercent(overview.reply_rate)} icon={Percent} tone="muted" />
+            <StatCard
+              label="Delivery rate"
+              value={formatPercent(overview.delivery_rate)}
+              icon={Mail}
+              tone="accent"
+              hint={`${overview.delivered} delivered · ${overview.bounced} bounced`}
+            />
+            <StatCard
+              label="Open rate"
+              value={formatPercent(overview.open_rate)}
+              icon={Percent}
+              tone="accent"
+              hint={`${overview.opened} opened · ${overview.clicked} clicked`}
+            />
+            <StatCard
+              label="Reply rate"
+              value={formatPercent(overview.reply_rate)}
+              icon={MousePointerClick}
+              tone="success"
+              hint={`${overview.replied} replied · ${overview.emails_sent} sent`}
+            />
           </section>
 
           <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
@@ -201,6 +214,12 @@ function DashboardContent() {
                 <RadialGauge
                   value={overview.delivery_rate !== null ? overview.delivery_rate * 100 : 0}
                   label="Delivery"
+                  color="accent"
+                  size={88}
+                />
+                <RadialGauge
+                  value={overview.open_rate !== null ? overview.open_rate * 100 : 0}
+                  label="Open"
                   color="accent"
                   size={88}
                 />
@@ -259,30 +278,61 @@ function DashboardContent() {
             </Card>
           </section>
 
-          {overview.top_campaigns.length > 0 && (
+          {(overview.emails_sent > 0 || overview.top_campaigns.length > 0) && (
             <section className="flex flex-col gap-3">
-              <h2 className="text-base font-semibold text-fg">Top campaigns</h2>
-              <Card className="flex flex-col divide-y divide-border p-0">
-                {overview.top_campaigns.map((c) => {
-                  const openRate = c.sent > 0 ? Math.round((c.opened / c.sent) * 100) : null;
-                  const replyRate = c.sent > 0 ? Math.round((c.replied / c.sent) * 100) : null;
-                  return (
-                    <div key={c.campaign_id} className="flex items-center justify-between gap-4 px-4 py-3.5">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accentSoft text-accent">
-                          <Mail className="h-3.5 w-3.5" />
-                        </span>
-                        <span className="truncate text-base font-medium text-fg">{c.name}</span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-4 font-mono text-sm tabular-nums text-fgMuted">
-                        <span>{c.sent} sent</span>
-                        <span>{openRate !== null ? `${openRate}% open` : "—"}</span>
-                        <span>{replyRate !== null ? `${replyRate}% reply` : "—"}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </Card>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-fg">Campaign statistics</h2>
+                <Link href="/campaigns" className="text-sm text-accent hover:underline">
+                  View campaigns
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  ["Sent", overview.emails_sent],
+                  ["Delivered", overview.delivered],
+                  ["Opened", overview.opened],
+                  ["Clicked", overview.clicked],
+                  ["Replied", overview.replied],
+                  ["Bounced", overview.bounced],
+                ].map(([label, value]) => (
+                  <Card key={String(label)} className="flex flex-col gap-1 p-4">
+                    <span className="text-2xs font-semibold uppercase tracking-wide text-fgSubtle">{label}</span>
+                    <span className="font-mono text-xl font-semibold tabular-nums text-fg">
+                      {Number(value).toLocaleString()}
+                    </span>
+                  </Card>
+                ))}
+              </div>
+              {overview.top_campaigns.length > 0 && (
+                <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
+                  {overview.top_campaigns.map((c) => {
+                    const openRate = c.sent > 0 ? Math.round((c.opened / c.sent) * 100) : null;
+                    const replyRate = c.sent > 0 ? Math.round((c.replied / c.sent) * 100) : null;
+                    const clickRate = c.sent > 0 ? Math.round((c.clicked / c.sent) * 100) : null;
+                    return (
+                      <Link
+                        key={c.campaign_id}
+                        href={`/campaigns/${c.campaign_id}`}
+                        className="flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-surface2"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accentSoft text-accent">
+                            <Mail className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="truncate text-base font-medium text-fg">{c.name}</span>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 font-mono text-sm tabular-nums text-fgMuted">
+                          <span>{c.sent} sent</span>
+                          <span>{openRate !== null ? `${openRate}% open` : "—"}</span>
+                          <span>{clickRate !== null ? `${clickRate}% click` : "—"}</span>
+                          <span>{replyRate !== null ? `${replyRate}% reply` : "—"}</span>
+                          <span>{c.bounced} bounce</span>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </Card>
+              )}
             </section>
           )}
         </>

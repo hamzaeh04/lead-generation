@@ -177,6 +177,8 @@ export interface AnalyticsOverview {
   replied: number;
   delivery_rate: number | null;
   bounce_rate: number | null;
+  open_rate: number | null;
+  click_rate: number | null;
   reply_rate: number | null;
   positive_reply_rate: number | null;
   total_provider_cost: number;

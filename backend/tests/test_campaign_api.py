@@ -124,6 +124,63 @@ async def test_full_campaign_lifecycle_sends_and_completes(client, db_session, u
     assert "Hello Jordan from Acme Dental Group" in stub.sent[0].html_body
 
 
+async def test_send_embeds_open_tracking_pixel_when_public_base_url_configured(
+    client, db_session, unique_email, monkeypatch
+):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "PUBLIC_BASE_URL", "https://example.test")
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    contact = await _make_contact(db_session, workspace_id)
+    campaign = await _create_campaign(client, headers, workspace_id)
+    await _add_step(client, headers, workspace_id, campaign["id"])
+    await client.post(f"/api/v1/campaigns/{campaign['id']}/start", params={"workspace_id": workspace_id}, headers=headers)
+    await client.post(
+        f"/api/v1/campaigns/{campaign['id']}/enroll",
+        params={"workspace_id": workspace_id},
+        json={"contact_ids": [str(contact.id)]},
+        headers=headers,
+    )
+
+    stub = await _enable_stub_sender(db_session, monkeypatch)
+    await client.post(
+        f"/api/v1/campaigns/{campaign['id']}/process", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert len(stub.sent) == 1
+    assert "https://example.test/api/v1/track/open/" in stub.sent[0].html_body
+    assert stub.sent[0].html_body.rstrip().endswith('.png" width="1" height="1" alt="" style="display:none" />')
+
+
+async def test_send_skips_tracking_pixel_when_public_base_url_unset(
+    client, db_session, unique_email, monkeypatch
+):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "PUBLIC_BASE_URL", None)
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    contact = await _make_contact(db_session, workspace_id)
+    campaign = await _create_campaign(client, headers, workspace_id)
+    await _add_step(client, headers, workspace_id, campaign["id"])
+    await client.post(f"/api/v1/campaigns/{campaign['id']}/start", params={"workspace_id": workspace_id}, headers=headers)
+    await client.post(
+        f"/api/v1/campaigns/{campaign['id']}/enroll",
+        params={"workspace_id": workspace_id},
+        json={"contact_ids": [str(contact.id)]},
+        headers=headers,
+    )
+
+    stub = await _enable_stub_sender(db_session, monkeypatch)
+    await client.post(
+        f"/api/v1/campaigns/{campaign['id']}/process", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert len(stub.sent) == 1
+    assert "/track/open/" not in stub.sent[0].html_body
+
+
 async def test_starting_campaign_without_steps_fails(client, unique_email):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
     campaign = await _create_campaign(client, headers, workspace_id)

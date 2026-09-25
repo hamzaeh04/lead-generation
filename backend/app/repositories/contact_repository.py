@@ -24,7 +24,12 @@ class ContactRepository:
         result = await self.session.execute(
             select(Contact)
             .where(Contact.id == contact_id, Contact.workspace_id == workspace_id)
-            .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
+            .options(
+                selectinload(Contact.company),
+                selectinload(Contact.sources),
+                selectinload(Contact.qualifications),
+                selectinload(Contact.campaign_recipients),
+            )
         )
         return result.scalar_one_or_none()
 
@@ -62,7 +67,12 @@ class ContactRepository:
         result = await self.session.execute(
             select(Contact)
             .where(Contact.workspace_id == workspace_id)
-            .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
+            .options(
+                selectinload(Contact.company),
+                selectinload(Contact.sources),
+                selectinload(Contact.qualifications),
+                selectinload(Contact.campaign_recipients),
+            )
             .order_by(Contact.created_at.desc())
             .limit(limit)
             .offset(offset)
@@ -85,7 +95,12 @@ class ContactRepository:
         stmt = (
             select(Contact)
             .where(Contact.workspace_id == workspace_id)
-            .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
+            .options(
+                selectinload(Contact.company),
+                selectinload(Contact.sources),
+                selectinload(Contact.qualifications),
+                selectinload(Contact.campaign_recipients),
+            )
         )
         if status is not None:
             stmt = stmt.where(Contact.status == status)

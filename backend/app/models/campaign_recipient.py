@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Uuid, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin, str_enum_values
@@ -48,3 +48,5 @@ class CampaignRecipient(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     next_send_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    contact: Mapped["Contact"] = relationship(back_populates="campaign_recipients")  # noqa: F821

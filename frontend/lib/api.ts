@@ -355,6 +355,9 @@ export interface Contact {
    * just fail. */
   revealable: boolean;
   latest_qualification: LeadQualificationSummary | null;
+  /** WhatsApp-style read-receipt signal: "sent" (one tick), "opened" (two
+   * ticks), or null if no campaign has ever emailed this lead. */
+  email_track_status: "sent" | "opened" | null;
   first_seen: string;
   last_seen: string;
 }

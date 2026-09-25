@@ -221,6 +221,17 @@ class CampaignSendingService:
         rendered_subject = render_template(subject_tpl, context).text
         rendered_body = render_template(body_tpl, context).text
 
+        # Open tracking: plain SMTP has no delivery/open telemetry of its
+        # own, so a tracking pixel is the only way to ever see the
+        # "opened" tick — skipped (send still goes out) if no public URL
+        # is configured for the pixel to point at, same fail-open
+        # convention as the rest of this app's optional integrations.
+        if self.settings.PUBLIC_BASE_URL:
+            pixel_url = (
+                f"{self.settings.PUBLIC_BASE_URL.rstrip('/')}/api/v1/track/open/{recipient.id}.png"
+            )
+            rendered_body += f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none" />'
+
         message = OutboundEmail(
             to_email=contact.email,
             from_email=campaign.from_email,

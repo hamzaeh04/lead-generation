@@ -22,6 +22,7 @@ from app.api.v1.search import router as search_router
 from app.api.v1.search_batches import router as search_batches_router
 from app.api.v1.suppressions import router as suppressions_router
 from app.api.v1.tags import router as tags_router
+from app.api.v1.tracking import router as tracking_router
 from app.api.v1.webhooks import router as webhooks_router
 from app.api.v1.workspace_api_keys import router as workspace_api_keys_router
 from app.api.v1.workspaces import router as workspaces_router
@@ -115,4 +116,5 @@ app.include_router(workspace_api_keys_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tags_router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
 app.include_router(webhooks_router, prefix=settings.API_V1_PREFIX)
+app.include_router(tracking_router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin_router, prefix=settings.API_V1_PREFIX)

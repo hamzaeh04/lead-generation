@@ -3,13 +3,22 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, String, Uuid, func, inspect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin, str_enum_values
+from app.models.campaign_recipient import RecipientStatus
+
+_EMAIL_OPENED_OR_BEYOND = {RecipientStatus.OPENED, RecipientStatus.CLICKED, RecipientStatus.REPLIED}
+_EMAIL_SENT_OR_BEYOND = _EMAIL_OPENED_OR_BEYOND | {
+    RecipientStatus.SENT,
+    RecipientStatus.BOUNCED,
+    RecipientStatus.UNSUBSCRIBED,
+    RecipientStatus.COMPLETED,
+}
 
 
 class LeadStatus(StrEnum):
@@ -112,6 +121,31 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     qualifications: Mapped[list["LeadQualification"]] = relationship(  # noqa: F821
         back_populates="contact", cascade="all, delete-orphan"
     )
+    campaign_recipients: Mapped[list["CampaignRecipient"]] = relationship(  # noqa: F821
+        back_populates="contact"
+    )
+
+    @property
+    def email_track_status(self) -> Literal["sent", "opened"] | None:
+        """WhatsApp-style read-receipt signal for the leads/batch table:
+        "opened" (double tick) once any campaign enrollment has actually
+        been opened, "sent" (single tick) once any has gone out, None
+        until then (never show a tick for a lead that was never emailed).
+        Deliberately reads CampaignRecipient.status rather than
+        Contact.status — the latter is a CRM pipeline stage the user can
+        move by hand (e.g. to "won"), which would otherwise make the tick
+        disappear even though the email genuinely was opened. Same
+        unloaded-relationship guard as company_name."""
+        if "campaign_recipients" in inspect(self).unloaded:
+            return None
+        if not self.campaign_recipients:
+            return None
+        statuses = {r.status for r in self.campaign_recipients}
+        if statuses & _EMAIL_OPENED_OR_BEYOND:
+            return "opened"
+        if statuses & _EMAIL_SENT_OR_BEYOND:
+            return "sent"
+        return None
 
     @property
     def latest_qualification(self) -> "LeadQualification | None":  # noqa: F821

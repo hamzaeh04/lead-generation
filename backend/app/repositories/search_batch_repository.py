@@ -85,6 +85,7 @@ class SearchBatchRepository:
                 selectinload(Contact.company),
                 selectinload(Contact.sources),
                 selectinload(Contact.qualifications),
+                selectinload(Contact.campaign_recipients),
             )
             .order_by(Contact.created_at.desc())
         )

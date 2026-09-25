@@ -1,4 +1,5 @@
 import { type ColumnDef } from "@tanstack/react-table";
+import { Check, CheckCheck } from "lucide-react";
 import Link from "next/link";
 import { Pill } from "@/components/ui/Pill";
 import { type Contact, type LeadStatus } from "@/lib/api";
@@ -36,6 +37,26 @@ function GradeCell({ contact }: { contact: Contact }) {
     return <span className="text-fgSubtle">—</span>;
   }
   return <Pill tone={tierTone[qualification.tier] ?? "muted"}>Tier {qualification.tier}</Pill>;
+}
+
+// WhatsApp-style read receipt: nothing until a campaign has actually
+// emailed this lead, one gray tick once it's sent, two blue ticks once
+// it's been opened. Nothing to click — a passive status signal only.
+function EmailTicksCell({ contact }: { contact: Contact }) {
+  const status = contact.email_track_status;
+  if (!status) return null;
+  if (status === "opened") {
+    return (
+      <span className="inline-flex items-center text-accent" title="Sent and opened">
+        <CheckCheck className="h-4 w-4" />
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center text-fgSubtle" title="Sent, not opened yet">
+      <Check className="h-4 w-4" />
+    </span>
+  );
 }
 
 export const statusTone: Record<string, "success" | "warning" | "danger" | "accent" | "muted"> = {
@@ -99,6 +120,11 @@ export const leadColumns: ColumnDef<Contact, unknown>[] = [
     accessorKey: "email",
     header: "Email",
     cell: ({ row }) => <span className="text-fgMuted">{row.original.email ?? "—"}</span>,
+  },
+  {
+    id: "email_track_status",
+    header: "Delivery",
+    cell: ({ row }) => <EmailTicksCell contact={row.original} />,
   },
   {
     accessorKey: "phone",

@@ -97,6 +97,7 @@ class CampaignService:
 
         enrolled = already_enrolled = not_found = 0
         now = datetime.now(timezone.utc)
+        newly_enrolled_contacts: list = []
 
         for contact_id in unique_ids:
             contact = await self.contacts.get_by_id(workspace_id, contact_id)
@@ -113,9 +114,18 @@ class CampaignService:
                 contact_id=contact_id,
                 next_send_at=now,
             )
+            newly_enrolled_contacts.append(contact)
             enrolled += 1
 
         await self.session.commit()
+        # contact.campaign_recipients was eager-loaded above (empty, since
+        # the just-created recipient row didn't exist yet) and
+        # expire_on_commit=False means it won't auto-refresh on its own —
+        # expire it so the next read (e.g. email_track_status) sees the
+        # new recipient instead of a stale empty collection. Same pattern
+        # as the "steps" expire in delete_step, for the same reason.
+        for contact in newly_enrolled_contacts:
+            self.session.expire(contact, ["campaign_recipients"])
 
         result = {
             "enrolled": enrolled,

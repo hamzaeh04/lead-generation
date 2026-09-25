@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -47,6 +47,9 @@ class ContactRead(BaseModel):
     field_provenance: dict[str, Any]
     revealable: bool
     latest_qualification: LeadQualificationSummary | None
+    #: WhatsApp-style read-receipt signal — "sent" (one tick), "opened"
+    #: (two ticks), or None if no campaign has ever emailed this lead.
+    email_track_status: Literal["sent", "opened"] | None
     first_seen: datetime
     last_seen: datetime
 

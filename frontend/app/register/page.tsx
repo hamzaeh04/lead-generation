@@ -1,21 +1,22 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { LogoMarkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
 import { getErrorMessage } from "@/lib/errors";
-import { registerAccount, storeSession } from "@/lib/api";
+import { getCurrentUser, registerAccount, storeSession } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { authStatus, refreshAuth } = useWorkspace();
+  const queryClient = useQueryClient();
+  const { refreshAuth } = useWorkspace();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -23,22 +24,18 @@ export default function RegisterPage() {
 
   const mutation = useMutation({
     mutationFn: registerAccount,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       storeSession(data);
       // See login/page.tsx — WorkspaceProvider's localStorage check only
       // runs once on initial mount, so this must be triggered explicitly.
-      // Navigation itself waits on the effect below (see login/page.tsx's
-      // comment for why: racing router.push against authStatus catching
-      // up caused an immediate bounce back with the form cleared).
+      // Awaiting the same "me" call directly here (see login/page.tsx's
+      // comment for the full reasoning) makes navigation deterministic
+      // instead of racing a separate component's own query.
       refreshAuth();
+      await queryClient.fetchQuery({ queryKey: ["me"], queryFn: getCurrentUser });
+      router.push("/dashboard");
     },
   });
-
-  useEffect(() => {
-    if (authStatus === "authenticated") {
-      router.push("/dashboard");
-    }
-  }, [authStatus, router]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-bg px-6 py-12">

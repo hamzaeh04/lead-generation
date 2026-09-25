@@ -1,52 +1,49 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { LogoMarkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
 import { getErrorMessage } from "@/lib/errors";
-import { login, storeSession } from "@/lib/api";
+import { getCurrentUser, login, storeSession } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { authStatus, refreshAuth } = useWorkspace();
+  const queryClient = useQueryClient();
+  const { refreshAuth } = useWorkspace();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const mutation = useMutation({
     mutationFn: login,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       storeSession(data);
       // WorkspaceProvider only checks localStorage for a token once, on
       // initial app mount — without this, authStatus would stay
       // "unauthenticated" after a client-side navigation and AppShell
       // would immediately bounce back to /login.
       refreshAuth();
-      // Navigation used to fire right here, immediately — but authStatus
-      // only becomes "authenticated" after a separate GET /auth/me
-      // round trip that refreshAuth() merely kicks off, not completes.
-      // Racing router.push("/dashboard") against that meant AppShell
-      // could mount on /dashboard while authStatus was still
-      // "unauthenticated" from the pre-login render, bounce straight
-      // back to /login via its own redirect effect, and wipe this page's
-      // (remounted) form state — exactly the "credentials get cleared,
-      // takes 2 tries" symptom reported. Waiting for the effect below
-      // means navigation only ever happens once authStatus is actually
-      // "authenticated", so there's nothing left to race.
+      // Navigating right here used to race WorkspaceProvider's own
+      // "me" query — authStatus only becomes "authenticated" after that
+      // separate GET /auth/me round trip completes, and depending on a
+      // second component's render/effect timing to catch up proved
+      // unreliable (intermittently needed 2+ login clicks, or only
+      // navigated after a full page reload). Awaiting the same call
+      // directly here — into the same react-query cache WorkspaceProvider
+      // reads via queryKey ["me"] — makes it deterministic: by the time
+      // router.push runs, "me" is already resolved and cached, so
+      // WorkspaceProvider reads authStatus "authenticated" on its very
+      // first render instead of racing to get there.
+      await queryClient.fetchQuery({ queryKey: ["me"], queryFn: getCurrentUser });
+      router.push("/dashboard");
     },
   });
-
-  useEffect(() => {
-    if (authStatus === "authenticated") {
-      router.push("/dashboard");
-    }
-  }, [authStatus, router]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-bg px-6 py-12">

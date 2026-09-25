@@ -32,3 +32,10 @@ class BatchQualifyResponse(BaseModel):
     skipped: int
     failed: int
     total: int
+
+
+class BatchRevealResponse(BaseModel):
+    revealed: int
+    skipped: int
+    failed: int
+    total: int

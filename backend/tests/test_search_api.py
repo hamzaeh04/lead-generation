@@ -31,7 +31,7 @@ class _StubAIProvider:
 
 class _FailingAIProvider:
     async def generate(self, request: AIGenerationRequest) -> AIGenerationResult:
-        raise ProviderUnavailableError("groq: simulated outage")
+        raise ProviderUnavailableError("anthropic: simulated outage")
 
 
 class _StubCompanyDiscoveryProvider(CompanyDiscoveryProvider):
@@ -231,7 +231,7 @@ async def test_search_execute_requires_authentication(client):
 async def test_parse_prompt_splits_known_fields_from_extra_filters(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
 
     ai_response = {
@@ -262,10 +262,53 @@ async def test_parse_prompt_splits_known_fields_from_extra_filters(client, db_se
     assert criteria["extra_filters"] == {"technologies": ["salesforce"], "department": ["Sales"]}
 
 
+async def test_parse_prompt_coerces_ai_type_drift_instead_of_failing(
+    client, db_session, unique_email, monkeypatch
+):
+    """Regression test: the AI is told keywords/city/etc. are free-text
+    strings and job_titles/seniorities are lists, but a real prompt
+    ("give me the leads for restaurant owners in texas") once got back
+    keywords as a list (["restaurants"]) instead of a string, which
+    DiscoveryCriteriaSchema's validator rejected outright — a dead end for
+    the user, since the whole point of the AI-prompt flow is not making
+    them hand-build filters. The mismatch is reshaped, not rejected, and
+    the reverse case (a list field given as a bare string) is covered too."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
+    await db_session.commit()
+
+    ai_response = {
+        "keywords": ["restaurants"],
+        "state": "texas",
+        "job_titles": "owner",
+    }
+    monkeypatch.setattr(
+        "app.services.prospect_prompt_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubAIProvider(ai_response),
+    )
+
+    response = await client.post(
+        "/api/v1/search/parse-prompt",
+        json={
+            "workspace_id": workspace_id,
+            "provider": "apollo",
+            "prompt": "give me the leads for restaurant owners in texas",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    criteria = response.json()["criteria"]
+    assert criteria["keywords"] == "restaurants"
+    assert criteria["state"] == "texas"
+    assert criteria["job_titles"] == ["owner"]
+
+
 async def test_parse_prompt_never_invents_fields_the_ai_omitted(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
 
     monkeypatch.setattr(
@@ -302,7 +345,7 @@ async def test_parse_prompt_rejects_unknown_provider(client, unique_email):
 async def test_parse_prompt_returns_502_when_ai_output_is_invalid(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
 
     # employee_count_min must be an int — the AI hallucinated a string.
@@ -325,14 +368,14 @@ async def test_parse_prompt_returns_503_when_no_ai_provider_has_credentials(
 ):
     from app.core.config import get_settings
 
-    # A developer's real backend/.env (with a live GROQ_API_KEY) is loaded
-    # into the process-wide cached Settings instance, so this can't rely on
-    # the key being ambiently unset — force it off for this test instead.
-    monkeypatch.setattr(get_settings(), "GROQ_API_KEY", None)
+    # A developer's real backend/.env (with a live ANTHROPIC_API_KEY) is
+    # loaded into the process-wide cached Settings instance, so this can't
+    # rely on the key being ambiently unset — force it off for this test.
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", None)
 
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
     # The registry allows the provider, but the factory can't build a
     # working instance without credentials.
@@ -365,7 +408,7 @@ async def test_parse_prompt_requires_workspace_membership(client, unique_email):
 async def test_parse_prompt_returns_502_when_ai_provider_errors(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
 
     monkeypatch.setattr(

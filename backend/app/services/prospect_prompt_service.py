@@ -7,7 +7,7 @@ location, etc; see the provider files for each one's exact schema).
 Smartlead's own "Ask AI to build your prospect list" feature in their web
 app works the same way: it's their frontend translating your sentence into
 those filters before calling their real, filter-only API. This service
-does the same translation via Groq, the AI provider already used for
+does the same translation via Anthropic, the AI provider already used for
 personalization elsewhere in this codebase.
 
 Grounding rule: the model is only asked to extract what the prompt actually

@@ -3,7 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LogoMarkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -15,7 +15,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { refreshAuth } = useWorkspace();
+  const { authStatus, refreshAuth } = useWorkspace();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -27,10 +27,18 @@ export default function RegisterPage() {
       storeSession(data);
       // See login/page.tsx — WorkspaceProvider's localStorage check only
       // runs once on initial mount, so this must be triggered explicitly.
+      // Navigation itself waits on the effect below (see login/page.tsx's
+      // comment for why: racing router.push against authStatus catching
+      // up caused an immediate bounce back with the form cleared).
       refreshAuth();
-      router.push("/dashboard");
     },
   });
+
+  useEffect(() => {
+    if (authStatus === "authenticated") {
+      router.push("/dashboard");
+    }
+  }, [authStatus, router]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-bg px-6 py-12">

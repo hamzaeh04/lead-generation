@@ -1,6 +1,6 @@
 """Shared provider contracts.
 
-Every provider integration (Apollo, Smartlead, Groq, SMTP, ...) implements
+Every provider integration (Apollo, Smartlead, Anthropic, SMTP, ...) implements
 one of the ABCs in the sibling `app/providers/<category>/base.py` modules.
 The core application (services, API routes) only ever depends on these
 interfaces — never on a concrete provider class — so providers can be

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import Settings
+from app.core.database import AsyncSessionLocal
 from app.models.company import Company
 from app.models.contact import Contact
 from app.providers.base import (
@@ -45,6 +46,46 @@ _DISCOVERY_CATEGORIES = {
     ProviderCategory.COMPANY_DISCOVERY,
     ProviderCategory.PERSON_DISCOVERY,
 }
+
+
+async def qualify_contacts_in_background(
+    *, workspace_id: uuid.UUID, contact_ids: list[uuid.UUID], settings: Settings
+) -> None:
+    """Runs qualify_many() outside the search request/response cycle.
+
+    Qualification used to be awaited inline inside SearchService.execute()
+    — fine for a handful of leads, but each AI call genuinely takes several
+    seconds and _BATCH_PACING_SECONDS adds more between them, so a normal
+    25-lead batch could keep the HTTP request open for minutes. Long enough
+    that the ngrok tunnel/browser gave up and surfaced a client-side error
+    even though the backend kept working and the batch/contacts had
+    already committed successfully. Scheduled via FastAPI's BackgroundTasks
+    (see app/api/v1/search.py) so the response returns as soon as
+    search+reveal are done; scores land a little later on refresh instead
+    of blocking the leads from showing up at all.
+
+    Runs on its own fresh session — the request-scoped session used by
+    execute() is closed once the response is sent, so this can't reuse it.
+    """
+    async with AsyncSessionLocal() as session:
+        contacts_result = await session.execute(
+            select(Contact).where(Contact.id.in_(contact_ids))
+        )
+        contacts = list(contacts_result.scalars().all())
+        if not contacts:
+            return
+        qualification_service = LeadQualificationService(session, settings)
+        result = await qualification_service.qualify_many(
+            workspace_id=workspace_id, contacts=contacts
+        )
+        logger.info(
+            "background_qualification_finished",
+            workspace_id=str(workspace_id),
+            qualified=result.qualified,
+            skipped=result.skipped,
+            failed=result.failed,
+            total=result.total,
+        )
 
 
 class SearchService:
@@ -208,34 +249,14 @@ class SearchService:
             )
             touched_contacts = {c.id: c for c in reloaded.scalars().all()}
 
-        qualification_result = None
-        if touched_contacts:
-            # Score every lead this search touched immediately, rather than
-            # leaving it to a separate manual step — paced (see
-            # LeadQualificationService._BATCH_PACING_SECONDS) to stay under
-            # the AI provider's burst rate limit. This is why a person
-            # search now takes noticeably longer than before: it's no
-            # longer just the provider call, it's provider call + one AI
-            # qualification per new lead.
-            qualification_service = LeadQualificationService(self.session, self.settings)
-            qualification_result = await qualification_service.qualify_many(
-                workspace_id=workspace_id, contacts=list(touched_contacts.values())
-            )
-            # qualify_many committed its own rows per-contact; re-fetch so
-            # the response reflects each contact's just-written qualification
-            # instead of the pre-scoring snapshot taken above. populate_existing
-            # is required here: these Contact objects are already identity-mapped
-            # in this same session with `qualifications` already loaded (as
-            # empty, from the reload above) — without it, SQLAlchemy trusts
-            # that already-loaded state and silently keeps serving the stale
-            # empty list instead of re-querying it.
-            reloaded = await self.session.execute(
-                select(Contact)
-                .where(Contact.id.in_(touched_contacts.keys()))
-                .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
-                .execution_options(populate_existing=True)
-            )
-            touched_contacts = {c.id: c for c in reloaded.scalars().all()}
+        # Qualification is scheduled by the API layer as a background task
+        # (see qualify_contacts_in_background above and
+        # app/api/v1/search.py) rather than awaited here — it's the slow
+        # part (one AI call per lead, several seconds each) and blocking
+        # the response on it was causing multi-minute requests that the
+        # ngrok tunnel/browser would give up on. The response below
+        # returns with each contact's pre-scoring `latest_qualification`
+        # (None for anything new); scores land on the next refetch.
 
         logger.info(
             "search_executed",
@@ -246,8 +267,6 @@ class SearchService:
             companies_matched=companies_matched,
             contacts_created=contacts_created,
             contacts_matched=contacts_matched,
-            leads_qualified=qualification_result.qualified if qualification_result else 0,
-            leads_qualify_failed=qualification_result.failed if qualification_result else 0,
         )
 
         return {

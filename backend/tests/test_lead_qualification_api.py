@@ -66,7 +66,7 @@ class _StubAIProvider:
 
 class _FailingAIProvider:
     async def generate(self, request: AIGenerationRequest) -> AIGenerationResult:
-        raise ProviderUnavailableError("groq: simulated outage")
+        raise ProviderUnavailableError("anthropic: simulated outage")
 
 
 async def _register_and_get_workspace(client, unique_email):
@@ -100,7 +100,7 @@ async def _make_contact(db_session, workspace_id, **overrides):
 
 async def test_qualify_lead_stores_and_returns_result(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
     contact = await _make_contact(db_session, workspace_id)
 
@@ -127,7 +127,7 @@ async def test_qualified_lead_shows_up_on_get_lead(client, db_session, unique_em
     """The whole point: GET /leads/{id} (what the table reads) must carry
     the latest qualification's tier/score without a separate request."""
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
     contact = await _make_contact(db_session, workspace_id)
 
@@ -164,7 +164,7 @@ async def test_get_lead_without_qualification_has_null_field(client, db_session,
 
 async def test_qualify_lead_rejects_invalid_tier(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
     contact = await _make_contact(db_session, workspace_id)
 
@@ -183,7 +183,7 @@ async def test_qualify_lead_rejects_invalid_tier(client, db_session, unique_emai
 
 async def test_qualify_lead_rejects_non_json_response(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
     contact = await _make_contact(db_session, workspace_id)
 
@@ -224,7 +224,7 @@ async def test_qualify_lead_returns_503_when_no_ai_provider_enabled(client, db_s
 
 async def test_qualify_all_in_batch_skips_already_scored(client, db_session, unique_email, monkeypatch):
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
 
     from app.models.search_batch import SearchBatch, SearchBatchContact

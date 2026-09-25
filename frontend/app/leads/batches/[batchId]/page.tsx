@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type RowSelectionState } from "@tanstack/react-table";
-import { Sparkles, Users2, Zap } from "lucide-react";
+import { Gauge, Mail, Sparkles, Users2, Zap } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import { StatCard } from "@/components/ui/StatCard";
-import { bulkUpdateLeadStatus, getSearchBatch, type LeadStatus } from "@/lib/api";
+import { bulkUpdateLeadStatus, getSearchBatch, qualifyBatch, revealBatch, type LeadStatus } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace-context";
 
@@ -38,6 +38,18 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
     queryKey: ["search-batch", workspaceId, batchId],
     queryFn: () => getSearchBatch(workspaceId!, batchId),
     enabled: !!workspaceId,
+    // Scoring runs as a background task after the search response returns
+    // (see search_service.qualify_contacts_in_background) — the leads on
+    // this page can go from "not scored yet" to scored with nobody
+    // clicking anything, so poll for that instead of requiring a manual
+    // reload. Stops on its own once every lead has a score, so it doesn't
+    // poll forever on a batch that's already fully settled.
+    refetchInterval: (query) => {
+      const contacts = query.state.data?.contacts;
+      if (!contacts) return false;
+      const stillScoring = contacts.some((c) => c.latest_qualification === null);
+      return stillScoring ? 4000 : false;
+    },
   });
 
   const batch = batchQuery.data;
@@ -49,6 +61,38 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
     onSuccess: (result) => {
       toast.success(`Updated ${result.updated} lead${result.updated === 1 ? "" : "s"}`);
       setRowSelection({});
+      queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] });
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
+  // Scoring and email reveal both already run automatically right after a
+  // search — these are manual recovery actions for when that background
+  // work got interrupted (server restart mid-batch, network blip), not a
+  // replacement for the automatic flow. Both skip anything already
+  // scored/revealed, so re-running never re-spends a credit or AI call on
+  // a lead that's already done.
+  const qualifyMutation = useMutation({
+    mutationFn: () => qualifyBatch(workspaceId!, batchId),
+    onSuccess: (result) => {
+      toast.success(
+        `Scored ${result.qualified} lead${result.qualified === 1 ? "" : "s"}` +
+          (result.skipped ? ` · ${result.skipped} already scored` : "") +
+          (result.failed ? ` · ${result.failed} failed` : "")
+      );
+      queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] });
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
+  const revealMutation = useMutation({
+    mutationFn: () => revealBatch(workspaceId!, batchId),
+    onSuccess: (result) => {
+      toast.success(
+        `Enriched ${result.revealed} lead${result.revealed === 1 ? "" : "s"}` +
+          (result.skipped ? ` · ${result.skipped} already had it` : "") +
+          (result.failed ? ` · ${result.failed} failed` : "")
+      );
       queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] });
     },
     onError: (error) => toast.error(getErrorMessage(error)),
@@ -75,6 +119,7 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
   const Icon = info.icon;
   const date = new Date(batch.created_at);
   const totalLeads = batch.contacts_created + batch.contacts_matched;
+  const scoredLeads = batch.contacts.filter((c) => c.latest_qualification !== null).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -94,6 +139,35 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
             Sourced via {info.label} · {date.toLocaleDateString()}{" "}
             {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <span
+            className="flex items-center gap-1.5 text-xs text-fgMuted"
+            title="AI-scored leads out of total leads in this batch"
+          >
+            <Gauge className="h-3.5 w-3.5" />
+            {scoredLeads}/{totalLeads} scored
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={revealMutation.isPending}
+            onClick={() => revealMutation.mutate()}
+            title="Enrich any leads missing email/details — skips leads already enriched"
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Enrich emails
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={qualifyMutation.isPending}
+            onClick={() => qualifyMutation.mutate()}
+            title="Score any leads missing an AI qualification — skips leads already scored"
+          >
+            <Gauge className="h-3.5 w-3.5" />
+            Score leads
+          </Button>
         </div>
       </Card>
 

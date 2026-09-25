@@ -68,6 +68,10 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
     queryKey: ["lead", workspaceId, contactId],
     queryFn: () => getLead(workspaceId!, contactId),
     enabled: !!workspaceId,
+    // AI qualification runs as a background task right after a search, so
+    // landing here right away can show "not scored yet" — poll until the
+    // score lands instead of requiring a manual reload, then stop.
+    refetchInterval: (query) => (query.state.data?.latest_qualification == null ? 4000 : false),
   });
 
   const notesQuery = useQuery({

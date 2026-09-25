@@ -34,6 +34,7 @@ from app.repositories.intent_signal_repository import IntentSignalRepository
 from app.repositories.provider_config_repository import ProviderConfigRepository
 from app.services import provider_factory
 from app.services.provider_usage_tracker import ProviderUsageRecorder
+from app.services.web_enrichment_service import scrape_company_website
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -44,9 +45,13 @@ _INSTRUCTIONS = (
     "You are drafting a short, truthful cold outreach email. "
     "Use ONLY the facts provided in the JSON below — never invent or assume "
     "any fact not explicitly listed (no fabricated awards, customers, "
-    "revenue, funding, projects, or partnerships). If the provided facts "
-    "are limited, write generic but truthful personalization rather than "
-    "guessing. Respond with a JSON object with exactly these string keys: "
+    "revenue, funding, projects, or partnerships). If a company_website_excerpt "
+    "field is present, it is real text scraped live from the company's own "
+    "site just now — you may draw on it the same as any other listed fact, "
+    "but still never state anything beyond what it or the other fields "
+    "actually say. If the provided facts are limited, write generic but "
+    "truthful personalization rather than guessing. Respond with a JSON "
+    "object with exactly these string keys: "
     '"subject", "opening_line", "body", "cta", "outreach_angle".'
 )
 
@@ -77,7 +82,14 @@ class PersonalizationService:
             signals = await self.intent_signals.list_for_company(workspace_id, company.id)
             latest_signal = signals[0] if signals else None  # already ordered newest-first
 
-        source_fields = self._build_source_fields(contact, company, latest_signal)
+        website_excerpt = None
+        if company is not None and (company.domain or company.website):
+            # Best-effort — a failed/timed-out scrape just means this run
+            # falls back to DB-only facts, same never-fabricate convention
+            # as everywhere else (see web_enrichment_service's docstring).
+            website_excerpt = await scrape_company_website(domain=company.domain, website=company.website)
+
+        source_fields = self._build_source_fields(contact, company, latest_signal, website_excerpt)
 
         registry_entries = await self.provider_configs.list_enabled_for_category(
             ProviderCategory.AI
@@ -164,7 +176,11 @@ class PersonalizationService:
         )
 
     def _build_source_fields(
-        self, contact: Contact, company: Company | None, signal: IntentSignal | None
+        self,
+        contact: Contact,
+        company: Company | None,
+        signal: IntentSignal | None,
+        website_excerpt: str | None = None,
     ) -> dict[str, str]:
         fields: dict[str, str] = {}
         if contact.full_name:
@@ -182,6 +198,8 @@ class PersonalizationService:
                 fields["company_state"] = company.state
             if company.website:
                 fields["company_website"] = company.website
+        if website_excerpt:
+            fields["company_website_excerpt"] = website_excerpt
         if signal and signal.signal_text:
             fields["recent_intent_signal"] = signal.signal_text
             fields["recent_intent_signal_source"] = signal.source_url

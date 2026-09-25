@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     SMARTLEAD_API_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
     OPENAI_MODEL: str = "gpt-4o-mini"
-    GROQ_API_KEY: str | None = None
-    GROQ_MODEL: str = "qwen/qwen3.8-27b"
+    ANTHROPIC_API_KEY: str | None = None
+    ANTHROPIC_MODEL: str = "claude-haiku-4-5-20251001"
     PROVIDER_HTTP_TIMEOUT_SECONDS: float = 15.0
 
     # SMTP (generic email-sending fallback — section 42)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +15,7 @@ from app.schemas.search import (
     SearchExecuteResponse,
 )
 from app.services.prospect_prompt_service import ProspectPromptService
-from app.services.search_service import SearchService
+from app.services.search_service import SearchService, qualify_contacts_in_background
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -36,10 +36,38 @@ _CRITERIA_TOP_LEVEL_FIELDS = {
     "seniorities",
 }
 
+# DiscoveryCriteriaSchema's str fields vs. its list[str] fields — the model
+# is told which shape each one is, but LLMs still sometimes cross the
+# streams (e.g. "restaurant owners" -> keywords: ["restaurants"] instead
+# of "restaurants"). A ValidationError here is a dead end for the user
+# (the whole point of the AI-prompt flow is not making them hand-build
+# filters), so the obvious shape mismatch is coerced instead of rejected —
+# this never invents a *value*, only reshapes one the model already gave.
+_CRITERIA_STRING_FIELDS = {"keywords", "industry", "country", "state", "city", "company_name", "domain"}
+_CRITERIA_LIST_FIELDS = {"job_titles", "seniorities"}
+
+
+def _normalize_criteria_types(top_level: dict) -> dict:
+    normalized = dict(top_level)
+    for field in _CRITERIA_STRING_FIELDS:
+        value = normalized.get(field)
+        if isinstance(value, list):
+            joined = ", ".join(str(v) for v in value if v not in (None, ""))
+            if joined:
+                normalized[field] = joined
+            else:
+                del normalized[field]
+    for field in _CRITERIA_LIST_FIELDS:
+        value = normalized.get(field)
+        if isinstance(value, str):
+            normalized[field] = [value]
+    return normalized
+
 
 @router.post("/execute", response_model=SearchExecuteResponse)
 async def execute_search(
     payload: SearchExecuteRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
@@ -61,6 +89,18 @@ async def execute_search(
         criteria=criteria,
         created_by=current_user.id,
     )
+
+    # Qualification runs after the response is sent (see
+    # qualify_contacts_in_background's docstring) so a large batch's AI
+    # scoring time never risks the request itself timing out.
+    contact_ids = [contact.id for contact in result["contacts"]]
+    if contact_ids:
+        background_tasks.add_task(
+            qualify_contacts_in_background,
+            workspace_id=payload.workspace_id,
+            contact_ids=contact_ids,
+            settings=settings,
+        )
 
     return SearchExecuteResponse(
         provider=payload.provider,
@@ -94,7 +134,9 @@ async def parse_prompt(
         prompt=payload.prompt, target_provider=payload.provider, workspace_id=payload.workspace_id
     )
 
-    top_level = {k: v for k, v in parsed.items() if k in _CRITERIA_TOP_LEVEL_FIELDS}
+    top_level = _normalize_criteria_types(
+        {k: v for k, v in parsed.items() if k in _CRITERIA_TOP_LEVEL_FIELDS}
+    )
     extra_filters = {k: v for k, v in parsed.items() if k not in _CRITERIA_TOP_LEVEL_FIELDS}
     try:
         criteria = DiscoveryCriteriaSchema(**top_level, extra_filters=extra_filters)

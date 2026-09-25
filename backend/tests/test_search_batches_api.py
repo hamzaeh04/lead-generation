@@ -227,8 +227,15 @@ async def test_zero_result_search_creates_no_batch(client, db_session, unique_em
 
 
 async def test_search_execute_auto_qualifies_new_leads(client, db_session, unique_email, monkeypatch):
-    """Regression test: leads must be scored automatically as part of the
-    search response, not left for a separate manual step."""
+    """Regression test: leads must be scored automatically after a search,
+    without a separate manual step — but qualification now runs as a
+    background task (see qualify_contacts_in_background in
+    search_service.py) rather than blocking the search response, since
+    awaiting it inline could hold a large batch's HTTP request open for
+    minutes. So the immediate response's latest_qualification is still
+    None; this asserts the score lands once the background task (which
+    the in-process ASGI test client awaits as part of the same call)
+    completes, via a follow-up GET."""
     import json
 
     from app.providers.ai.base import AIGenerationRequest, AIGenerationResult
@@ -240,7 +247,7 @@ async def test_search_execute_auto_qualifies_new_leads(client, db_session, uniqu
             provider="stub", category=ProviderCategory.PERSON_DISCOVERY, enabled=True, priority=1
         )
     )
-    db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
+    db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
 
     ai_response = {
@@ -263,13 +270,31 @@ async def test_search_execute_auto_qualifies_new_leads(client, db_session, uniqu
             )
 
     def _build_provider(provider_name, category, settings):
-        return _StubAIProvider() if provider_name == "groq" else _StubPersonDiscoveryProvider()
+        return _StubAIProvider() if provider_name == "anthropic" else _StubPersonDiscoveryProvider()
+
+    class _SharedSessionContextManager:
+        """qualify_contacts_in_background opens its own AsyncSessionLocal()
+        session in production (the request-scoped test `db_session` is
+        closed by the time a background task runs) — but the test fixtures
+        share one in-memory SQLite `db_session` for the whole test, so the
+        background task must reuse that same session/engine instead of a
+        real AsyncSessionLocal() pointed at a Postgres URL that doesn't
+        exist in this sandbox."""
+
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, *exc_info):
+            return False
 
     # search_service and lead_qualification_service both `from app.services
     # import provider_factory` — same module object either way, so one
     # patch (dispatching on provider_name) covers both call sites.
     monkeypatch.setattr("app.services.provider_factory.build_provider", _build_provider)
     monkeypatch.setattr("app.services.lead_qualification_service._BATCH_PACING_SECONDS", 0)
+    monkeypatch.setattr(
+        "app.services.search_service.AsyncSessionLocal", lambda: _SharedSessionContextManager()
+    )
 
     response = await client.post(
         "/api/v1/search/execute",
@@ -285,7 +310,15 @@ async def test_search_execute_auto_qualifies_new_leads(client, db_session, uniqu
     assert response.status_code == 200
     body = response.json()
     assert len(body["contacts"]) == 1
-    qualification = body["contacts"][0]["latest_qualification"]
+    assert body["contacts"][0]["latest_qualification"] is None
+    contact_id = body["contacts"][0]["id"]
+
+    db_session.expire_all()
+    lead_response = await client.get(
+        f"/api/v1/leads/{contact_id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert lead_response.status_code == 200
+    qualification = lead_response.json()["latest_qualification"]
     assert qualification is not None
     assert qualification["tier"] == "B"
     assert qualification["composite_score"] == 70
@@ -358,3 +391,89 @@ async def test_search_execute_auto_reveals_apollo_leads_but_not_phone(
     assert contact["linkedin_url"] == "https://linkedin.com/in/janedoe"
     assert contact["email_status"] == "verified"
     assert contact["phone"] is None
+
+
+async def test_reveal_all_in_batch_skips_already_revealed(client, db_session, unique_email, monkeypatch):
+    """Manual recovery action (see /reveal-all's docstring): reveals every
+    not-yet-revealed contact in a batch, skipping anything that already has
+    an email — so re-running this after a partial failure never re-spends
+    a credit on a lead that's already done."""
+    import uuid
+
+    from app.models.contact import Contact
+    from app.models.search_batch import SearchBatch, SearchBatchContact
+    from app.repositories.contact_repository import ContactRepository
+
+    class _StubApolloRevealProvider(PersonDiscoveryProvider):
+        name = "apollo"
+        category = ProviderCategory.PERSON_DISCOVERY
+
+        async def discover_people(self, criteria: DiscoveryCriteria) -> list[NormalizedContact]:
+            return []
+
+        async def discover_decision_makers(self, company_domain: str, target_titles: list[str]):
+            return []
+
+        async def reveal(self, external_id: str, *, raw_reference=None) -> dict | None:
+            return {"email": "fresh@acme.example", "first_name": "Fresh"}
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    db_session.add(
+        ProviderConfig(provider="apollo", category=ProviderCategory.PERSON_DISCOVERY, enabled=True, priority=1)
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.lead_reveal_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubApolloRevealProvider(),
+    )
+
+    already_revealed = Contact(
+        workspace_id=uuid.UUID(workspace_id), first_name="Already", full_name="Already", email="already@acme.example"
+    )
+    not_revealed = Contact(workspace_id=uuid.UUID(workspace_id), first_name="Fresh", full_name="Fresh")
+    db_session.add_all([already_revealed, not_revealed])
+    await db_session.flush()
+
+    contact_repo = ContactRepository(db_session)
+    contact_repo.add_source(
+        contact=already_revealed, provider="apollo", external_id="apollo-1", source_url=None,
+        source_type="api", raw_reference={"id": "apollo-1"},
+    )
+    contact_repo.add_source(
+        contact=not_revealed, provider="apollo", external_id="apollo-2", source_url=None,
+        source_type="api", raw_reference={"id": "apollo-2"},
+    )
+    await db_session.commit()
+    already_revealed_id = already_revealed.id
+    not_revealed_id = not_revealed.id
+
+    batch = SearchBatch(
+        workspace_id=uuid.UUID(workspace_id), sequence=1, provider="apollo", category=ProviderCategory.PERSON_DISCOVERY
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    batch_id = batch.id
+    db_session.add_all(
+        [
+            SearchBatchContact(batch_id=batch_id, contact_id=already_revealed_id, is_new=True),
+            SearchBatchContact(batch_id=batch_id, contact_id=not_revealed_id, is_new=True),
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/search-batches/{batch_id}/reveal-all", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert body["revealed"] == 1
+    assert body["skipped"] == 1
+
+    db_session.expire_all()
+    lead_response = await client.get(
+        f"/api/v1/leads/{not_revealed_id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert lead_response.json()["email"] == "fresh@acme.example"

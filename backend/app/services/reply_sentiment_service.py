@@ -1,5 +1,5 @@
 """Classifies a reply's sentiment (positive/neutral/negative) from its
-actual text, via whatever `ai`-category provider is enabled (Groq by
+actual text, via whatever `ai`-category provider is enabled (Anthropic by
 default — see provider_factory). Returns None whenever there's no text to
 classify or no AI provider is configured/available, same never-fabricate
 boundary as every other AI-adjacent feature in this codebase: a missing

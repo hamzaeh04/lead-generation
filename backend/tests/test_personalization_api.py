@@ -125,6 +125,57 @@ async def test_personalize_persists_and_returns_generation(client, db_session, u
     assert len(list_response.json()) == 1
 
 
+async def test_personalize_includes_scraped_company_website_excerpt(
+    client, db_session, unique_email, monkeypatch
+):
+    """The AI-personalization draft can now be grounded in real, live text
+    scraped from the company's own website, not just DB-stored facts — see
+    web_enrichment_service.scrape_company_website. The scrape itself is
+    monkeypatched here so the test never makes a real network call; a
+    dedicated test in test_web_enrichment_service.py covers the scraper's
+    own HTML-parsing behavior."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    contact = await _make_contact(db_session, workspace_id, with_signal=False)
+    company = await db_session.get(Company, contact.company_id)
+    company.domain = "acme-dental.example"
+    await db_session.commit()
+
+    db_session.add(
+        ProviderConfig(provider="openai", category=ProviderCategory.AI, enabled=True, priority=1)
+    )
+    await db_session.commit()
+
+    response_body = {
+        "subject": "Loved your new patient-first approach",
+        "opening_line": "Saw your site mentions same-day appointments.",
+        "body": "Wanted to reach out...",
+        "cta": "Open to a quick call?",
+        "outreach_angle": "Website messaging",
+    }
+    monkeypatch.setattr(
+        "app.services.personalization_service.provider_factory.build_provider",
+        lambda provider_name, category, settings: _StubAIProvider(response_body),
+    )
+
+    async def _fake_scrape(*, domain, website):
+        assert domain == "acme-dental.example"
+        return "Acme Dental Group offers same-day appointments and a patient-first approach."
+
+    monkeypatch.setattr(
+        "app.services.personalization_service.scrape_company_website", _fake_scrape
+    )
+
+    response = await client.post(
+        f"/api/v1/leads/{contact.id}/personalize",
+        params={"workspace_id": workspace_id},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "company_website_excerpt" in body["source_fields_used"]
+
+
 async def test_personalize_without_intent_signal_has_no_personalization_source(
     client, db_session, unique_email, monkeypatch
 ):

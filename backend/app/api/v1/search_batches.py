@@ -6,8 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db_session, require_workspace_member
 from app.core.config import Settings, get_settings
 from app.repositories.search_batch_repository import SearchBatchRepository
-from app.schemas.search_batch import BatchQualifyResponse, SearchBatchDetail, SearchBatchRead
+from app.schemas.search_batch import (
+    BatchQualifyResponse,
+    BatchRevealResponse,
+    SearchBatchDetail,
+    SearchBatchRead,
+)
 from app.services.lead_qualification_service import LeadQualificationService
+from app.services.lead_reveal_service import LeadRevealService
 
 router = APIRouter(prefix="/search-batches", tags=["search-batches"])
 
@@ -61,4 +67,31 @@ async def qualify_all_in_batch(
     result = await service.qualify_many(workspace_id=workspace_id, contacts=contacts)
     return BatchQualifyResponse(
         qualified=result.qualified, skipped=result.skipped, failed=result.failed, total=result.total
+    )
+
+
+@router.post("/{batch_id}/reveal-all", response_model=BatchRevealResponse)
+async def reveal_all_in_batch(
+    batch_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    _membership=Depends(require_workspace_member),
+    session: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+):
+    """Manual recovery action for when automatic post-search reveal was
+    interrupted (server restart, network blip) partway through a batch —
+    reveals every not-yet-revealed contact in this batch. Reuses
+    reveal_many's own guards (already has email, already attempted) so
+    re-running this after a partial failure only touches what's still
+    missing, never re-billing a contact that was already revealed."""
+    batch_repo = SearchBatchRepository(session)
+    batch = await batch_repo.get_by_id(workspace_id, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search batch not found")
+
+    contacts = await batch_repo.list_contacts(batch_id)
+    service = LeadRevealService(session, settings)
+    result = await service.reveal_many(workspace_id=workspace_id, contacts=contacts, provider=batch.provider)
+    return BatchRevealResponse(
+        revealed=result.revealed, skipped=result.skipped, failed=result.failed, total=result.total
     )

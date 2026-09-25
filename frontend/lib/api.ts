@@ -420,6 +420,22 @@ export async function qualifyBatch(workspaceId: string, batchId: string): Promis
   return data;
 }
 
+export interface BatchRevealResponse {
+  revealed: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+export async function revealBatch(workspaceId: string, batchId: string): Promise<BatchRevealResponse> {
+  const { data } = await api.post<BatchRevealResponse>(
+    `/search-batches/${batchId}/reveal-all`,
+    {},
+    { params: { workspace_id: workspaceId } }
+  );
+  return data;
+}
+
 export async function listLeads(
   workspaceId: string,
   params: {

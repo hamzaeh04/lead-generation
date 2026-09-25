@@ -3,7 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LogoMarkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -15,7 +15,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { refreshAuth } = useWorkspace();
+  const { authStatus, refreshAuth } = useWorkspace();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -28,9 +28,25 @@ export default function LoginPage() {
       // "unauthenticated" after a client-side navigation and AppShell
       // would immediately bounce back to /login.
       refreshAuth();
-      router.push("/dashboard");
+      // Navigation used to fire right here, immediately — but authStatus
+      // only becomes "authenticated" after a separate GET /auth/me
+      // round trip that refreshAuth() merely kicks off, not completes.
+      // Racing router.push("/dashboard") against that meant AppShell
+      // could mount on /dashboard while authStatus was still
+      // "unauthenticated" from the pre-login render, bounce straight
+      // back to /login via its own redirect effect, and wipe this page's
+      // (remounted) form state — exactly the "credentials get cleared,
+      // takes 2 tries" symptom reported. Waiting for the effect below
+      // means navigation only ever happens once authStatus is actually
+      // "authenticated", so there's nothing left to race.
     },
   });
+
+  useEffect(() => {
+    if (authStatus === "authenticated") {
+      router.push("/dashboard");
+    }
+  }, [authStatus, router]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-bg px-6 py-12">

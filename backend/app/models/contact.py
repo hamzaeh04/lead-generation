@@ -70,6 +70,12 @@ class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: one attempt comes back with no email, we stop offering "Reveal"
     #: rather than let it be clicked repeatedly for nothing.
     email_reveal_attempted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: True once a phone-reveal request has been sent to Apollo for this
+    #: contact (see PhoneEnrichmentService), regardless of whether Apollo's
+    #: webhook eventually delivers a number — same never-re-request
+    #: convention as email_reveal_attempted, for the same reason (no
+    #: server-side "already tried" memory on Apollo's side).
+    phone_reveal_attempted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     #: This person's own location — distinct from the company's address
     #: (e.g. a remote employee). Currently only populated by Smartlead's
     #: SmartProspect search, which reports it per-person.

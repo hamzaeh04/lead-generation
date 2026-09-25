@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type RowSelectionState } from "@tanstack/react-table";
-import { Gauge, Mail, Sparkles, Users2, Zap } from "lucide-react";
+import { Gauge, Mail, Phone, Sparkles, Users2, Zap } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,7 +14,14 @@ import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import { StatCard } from "@/components/ui/StatCard";
-import { bulkUpdateLeadStatus, getSearchBatch, qualifyBatch, revealBatch, type LeadStatus } from "@/lib/api";
+import {
+  bulkUpdateLeadStatus,
+  enrichPhonesBatch,
+  getSearchBatch,
+  qualifyBatch,
+  revealBatch,
+  type LeadStatus,
+} from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace-context";
 
@@ -105,6 +112,27 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
+  // Apollo only, and manual-only (never automatic) — phone reveal spends
+  // extra Apollo credits on top of the email reveal that already runs
+  // automatically. Apollo delivers the actual number asynchronously via
+  // webhook, not in this response, so this only confirms what got
+  // requested; numbers land on the page's existing polling/refresh.
+  const enrichPhonesMutation = useMutation({
+    mutationFn: () => enrichPhonesBatch(workspaceId!, batchId),
+    onSuccess: (result) => {
+      if (result.requested === 0) {
+        toast.success("No leads need phone enrichment — already requested or missing");
+      } else {
+        toast.success(
+          `Requested phone numbers for ${result.requested} lead${result.requested === 1 ? "" : "s"} — ` +
+            "Apollo delivers these shortly; refresh to see them"
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] });
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
   if (batchQuery.isLoading || !batch) {
     return (
       <div className="flex flex-col gap-4">
@@ -165,6 +193,18 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
             <Mail className="h-3.5 w-3.5" />
             Enrich emails
           </Button>
+          {batch.provider === "apollo" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={enrichPhonesMutation.isPending}
+              onClick={() => enrichPhonesMutation.mutate()}
+              title="Request phone numbers from Apollo (extra credits) — delivered shortly after, not instantly"
+            >
+              <Phone className="h-3.5 w-3.5" />
+              Enrich phones
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"

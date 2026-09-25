@@ -478,3 +478,212 @@ async def test_reveal_all_in_batch_skips_already_revealed(client, db_session, un
         f"/api/v1/leads/{not_revealed_id}", params={"workspace_id": workspace_id}, headers=headers
     )
     assert lead_response.json()["email"] == "fresh@acme.example"
+
+
+async def test_enrich_phones_rejects_non_apollo_batch(client, db_session, unique_email):
+    import uuid
+
+    from app.models.search_batch import SearchBatch
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    batch = SearchBatch(
+        workspace_id=uuid.UUID(workspace_id), sequence=1, provider="smartlead", category=ProviderCategory.PERSON_DISCOVERY
+    )
+    db_session.add(batch)
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/search-batches/{batch.id}/enrich-phones", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 400
+    assert "Apollo" in response.json()["detail"]
+
+
+async def test_enrich_phones_returns_503_when_public_base_url_unset(
+    client, db_session, unique_email, monkeypatch
+):
+    import uuid
+
+    from app.core.config import get_settings
+    from app.models.search_batch import SearchBatch
+
+    # A developer's real backend/.env (with a live PUBLIC_BASE_URL) is
+    # loaded into the process-wide cached Settings instance, so this can't
+    # rely on it being ambiently unset — force it off for this test.
+    monkeypatch.setattr(get_settings(), "PUBLIC_BASE_URL", None)
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    batch = SearchBatch(
+        workspace_id=uuid.UUID(workspace_id), sequence=1, provider="apollo", category=ProviderCategory.PERSON_DISCOVERY
+    )
+    db_session.add(batch)
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/search-batches/{batch.id}/enrich-phones", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 503
+
+
+async def test_enrich_phones_requests_and_skips_already_attempted(
+    client, db_session, unique_email, monkeypatch
+):
+    """Regression test: requesting phone reveal only kicks off Apollo's
+    async lookup (see PhoneEnrichmentService) — the number itself lands
+    later via the /apollo/phone-reveal webhook, simulated here directly
+    rather than through a real HTTP callback."""
+    import uuid
+
+    from app.core.config import get_settings
+    from app.models.contact import Contact
+    from app.models.search_batch import SearchBatch, SearchBatchContact
+    from app.repositories.contact_repository import ContactRepository
+
+    monkeypatch.setattr(get_settings(), "PUBLIC_BASE_URL", "https://example-tunnel.ngrok-free.dev")
+    monkeypatch.setattr(get_settings(), "APOLLO_WEBHOOK_SECRET", None)
+
+    requested_ids: list[str] = []
+
+    class _StubApolloPhoneProvider(_StubPersonDiscoveryProvider):
+        name = "apollo"
+
+        async def request_phone_reveal(self, external_id: str, *, webhook_url: str) -> None:
+            assert webhook_url == "https://example-tunnel.ngrok-free.dev/api/v1/webhooks/apollo/phone-reveal"
+            requested_ids.append(external_id)
+
+    monkeypatch.setattr(
+        "app.services.phone_enrichment_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubApolloPhoneProvider()),
+    )
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    no_phone_yet = Contact(workspace_id=uuid.UUID(workspace_id), first_name="Fresh", full_name="Fresh")
+    already_has_phone = Contact(
+        workspace_id=uuid.UUID(workspace_id), first_name="HasPhone", full_name="HasPhone", phone="+15550100001"
+    )
+    already_attempted = Contact(
+        workspace_id=uuid.UUID(workspace_id),
+        first_name="Attempted",
+        full_name="Attempted",
+        phone_reveal_attempted=True,
+    )
+    db_session.add_all([no_phone_yet, already_has_phone, already_attempted])
+    await db_session.flush()
+
+    contact_repo = ContactRepository(db_session)
+    for contact, ext_id in [
+        (no_phone_yet, "apollo-fresh"),
+        (already_has_phone, "apollo-has-phone"),
+        (already_attempted, "apollo-attempted"),
+    ]:
+        contact_repo.add_source(
+            contact=contact, provider="apollo", external_id=ext_id, source_url=None,
+            source_type="api", raw_reference={"id": ext_id},
+        )
+    await db_session.commit()
+    no_phone_yet_id = no_phone_yet.id  # captured before expire_all() below expires it too
+
+    batch = SearchBatch(
+        workspace_id=uuid.UUID(workspace_id), sequence=1, provider="apollo", category=ProviderCategory.PERSON_DISCOVERY
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            SearchBatchContact(batch_id=batch.id, contact_id=no_phone_yet_id, is_new=True),
+            SearchBatchContact(batch_id=batch.id, contact_id=already_has_phone.id, is_new=True),
+            SearchBatchContact(batch_id=batch.id, contact_id=already_attempted.id, is_new=True),
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/search-batches/{batch.id}/enrich-phones", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 3
+    assert body["requested"] == 1
+    assert body["skipped"] == 2
+    assert requested_ids == ["apollo-fresh"]
+
+    db_session.expire_all()
+    lead_response = await client.get(
+        f"/api/v1/leads/{no_phone_yet_id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert lead_response.status_code == 200
+    # phone_reveal_attempted isn't exposed on ContactRead, but the DB row
+    # should have flipped — verified via a direct query instead.
+    refreshed = await db_session.get(Contact, no_phone_yet_id)
+    assert refreshed.phone_reveal_attempted is True
+
+
+async def test_apollo_phone_reveal_webhook_updates_contact(client, db_session, unique_email, monkeypatch):
+    """Simulates Apollo's async callback (see docs.apollo.io/docs/
+    retrieve-mobile-phone-numbers-for-contacts) landing after a phone
+    was requested — confirms the webhook handler matches it back to the
+    right contact via ContactSource and fills in the phone."""
+    import uuid
+
+    from app.core.config import get_settings
+
+    # A developer's real backend/.env (with a live APOLLO_WEBHOOK_SECRET)
+    # is loaded into the process-wide cached Settings instance, so this
+    # can't rely on it being ambiently unset — force it off for this test.
+    monkeypatch.setattr(get_settings(), "APOLLO_WEBHOOK_SECRET", None)
+
+    from app.models.contact import Contact
+    from app.repositories.contact_repository import ContactRepository
+
+    _, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    contact = Contact(
+        workspace_id=uuid.UUID(workspace_id), first_name="Fresh", full_name="Fresh", phone_reveal_attempted=True
+    )
+    db_session.add(contact)
+    await db_session.flush()
+    ContactRepository(db_session).add_source(
+        contact=contact, provider="apollo", external_id="apollo-webhook-1", source_url=None,
+        source_type="api", raw_reference={"id": "apollo-webhook-1"},
+    )
+    await db_session.commit()
+    contact_id = contact.id
+
+    response = await client.post(
+        "/api/v1/webhooks/apollo/phone-reveal",
+        json={
+            "people": [
+                {
+                    "id": "apollo-webhook-1",
+                    "phone_numbers": [{"raw_number": "15550100099", "sanitized_number": "+15550100099"}],
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["received"] == 1
+    assert body["updated"] == 1
+
+    db_session.expire_all()
+    refreshed = await db_session.get(Contact, contact_id)
+    assert refreshed.phone == "+15550100099"
+
+
+async def test_apollo_phone_reveal_webhook_rejects_wrong_secret(client, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "APOLLO_WEBHOOK_SECRET", "correct-secret")
+
+    response = await client.post(
+        "/api/v1/webhooks/apollo/phone-reveal",
+        params={"secret": "wrong-secret"},
+        json={"people": []},
+    )
+
+    assert response.status_code == 401

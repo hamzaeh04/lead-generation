@@ -152,3 +152,15 @@ class ContactRepository:
             .order_by(ContactSource.retrieved_at.desc())
         )
         return result.scalars().first()
+
+    async def find_by_provider_external_id(self, provider: str, external_id: str) -> Contact | None:
+        """Webhook callbacks (e.g. Apollo's async phone reveal) only carry
+        the provider's own person id, not our contact_id/workspace_id — not
+        workspace-scoped since a provider's external_id is globally unique
+        to that provider, not per-workspace."""
+        result = await self.session.execute(
+            select(Contact)
+            .join(ContactSource, ContactSource.contact_id == Contact.id)
+            .where(ContactSource.provider == provider, ContactSource.external_id == external_id)
+        )
+        return result.scalars().first()

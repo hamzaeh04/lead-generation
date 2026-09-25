@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
@@ -30,6 +31,9 @@ from app.repositories.email_event_repository import EmailEventRepository
 from app.schemas.suppression import EmailEventWebhook, EmailEventWebhookResponse
 from app.services.reply_sentiment_service import classify_reply_sentiment, extract_reply_text
 from app.services.suppression_service import SuppressionService
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -122,3 +126,60 @@ async def ingest_email_event(
     return EmailEventWebhookResponse(
         recorded=True, campaign_recipient_id=recipient.id, suppressed=suppressed
     )
+
+
+class _ApolloPhoneNumber(BaseModel):
+    raw_number: str | None = None
+    sanitized_number: str | None = None
+
+
+class _ApolloPhoneRevealPerson(BaseModel):
+    id: str
+    phone_numbers: list[_ApolloPhoneNumber] = Field(default_factory=list)
+
+
+class _ApolloPhoneRevealWebhook(BaseModel):
+    """Apollo's async phone-reveal callback — verified shape (September
+    2026) against docs.apollo.io/docs/retrieve-mobile-phone-numbers-for-contacts.
+    Only the fields this handler actually uses are modeled; Apollo sends
+    several more (status, credits_consumed, etc.) that are ignored here."""
+
+    people: list[_ApolloPhoneRevealPerson] = Field(default_factory=list)
+
+
+@router.post("/apollo/phone-reveal")
+async def apollo_phone_reveal_webhook(
+    payload: _ApolloPhoneRevealWebhook,
+    secret: str | None = None,
+    session: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+):
+    """Apollo POSTs here once an async phone-number lookup (kicked off by
+    PhoneEnrichmentService/POST /search-batches/{id}/enrich-phones)
+    completes — the requesting call never gets the phone number directly,
+    only this callback does. Matched back to a Contact via ContactSource
+    (provider="apollo", external_id=person.id), not workspace-scoped in
+    the payload itself since Apollo's person id is globally unique.
+    Fill-only-if-empty: never overwrites a phone number that's already
+    there from some other source."""
+    if settings.APOLLO_WEBHOOK_SECRET and secret != settings.APOLLO_WEBHOOK_SECRET:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid webhook secret")
+
+    contacts_repo = ContactRepository(session)
+    updated = 0
+    for person in payload.people:
+        phone = None
+        if person.phone_numbers:
+            first = person.phone_numbers[0]
+            phone = first.sanitized_number or first.raw_number
+        if not phone:
+            continue
+        contact = await contacts_repo.find_by_provider_external_id("apollo", person.id)
+        if contact is None or contact.phone:
+            continue
+        contact.phone = phone
+        updated += 1
+
+    await session.commit()
+    logger.info("apollo_phone_reveal_webhook_received", people=len(payload.people), updated=updated)
+    return {"received": len(payload.people), "updated": updated}

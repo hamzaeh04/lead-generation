@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     # CORS — comma-separated exact origins. Vercel *.vercel.app also allowed via regex in main.py.
     CORS_ORIGINS: str = "http://localhost:3000,https://lead-generation-backend-nu.vercel.app"
 
+    # Publicly reachable base URL for this backend — required for Apollo's
+    # phone-reveal webhook (see app/api/v1/webhooks.py), since Apollo must
+    # be able to POST back to us from the outside. Locally this is
+    # whatever ngrok (or similar) URL is currently proxying to this app;
+    # unset means phone enrichment is unavailable, not a startup failure.
+    PUBLIC_BASE_URL: str | None = None
+    # Shared secret appended to the phone-reveal webhook URL as ?secret=
+    # so a stranger who finds the endpoint can't POST fabricated phone
+    # numbers onto real contacts. Unset means the webhook accepts anyone —
+    # fine for a quick local test, not for anything public-facing.
+    APOLLO_WEBHOOK_SECRET: str | None = None
+
     # Provider credentials — all optional; a provider with no key is simply
     # unavailable (ProviderUnavailableError), never a hard startup failure.
     APOLLO_API_KEY: str | None = None

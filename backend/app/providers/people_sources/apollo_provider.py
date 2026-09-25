@@ -145,6 +145,30 @@ class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
             "organization": self._org_enrichment(org) if isinstance(org, dict) else None,
         }
 
+    async def request_phone_reveal(self, external_id: str, *, webhook_url: str) -> None:
+        """Kicks off Apollo's async mobile/direct-dial phone reveal.
+
+        Verified against docs.apollo.io/reference/people-enrichment and
+        .../docs/retrieve-mobile-phone-numbers-for-contacts (September
+        2026): passing `reveal_phone_number: true` requires a `webhook_url`
+        — Apollo returns its normal synchronous /people/match response
+        immediately (which we ignore here; email/name were already
+        captured by reveal()), then separately POSTs the actual phone
+        number(s) to that webhook once the lookup completes, in the shape
+        `{"people": [{"id": ..., "phone_numbers": [...]}], ...}` (see
+        app/api/v1/webhooks.py's /apollo/phone-reveal handler). Costs 8
+        Apollo credits only if a mobile number is actually found — nothing
+        is charged for a miss.
+        """
+        await request_json(
+            self._client,
+            "POST",
+            "/api/v1/people/match",
+            provider=self.name,
+            headers={"x-api-key": self._api_key},
+            json={"id": external_id, "reveal_phone_number": True, "webhook_url": webhook_url},
+        )
+
     @staticmethod
     def _org_enrichment(org: dict) -> dict:
         """Only the fields we actually persist onto Company — Apollo's

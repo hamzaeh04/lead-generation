@@ -44,3 +44,15 @@ class BatchRevealResponse(BaseModel):
     skipped: int
     failed: int
     total: int
+
+
+class BatchPhoneEnrichResponse(BaseModel):
+    """Requesting a phone reveal only kicks off Apollo's async lookup —
+    the number itself lands later via webhook (see
+    app/api/v1/webhooks.py's /apollo/phone-reveal), so this reports what
+    got requested, not how many numbers were actually found."""
+
+    requested: int
+    skipped: int
+    failed: int
+    total: int

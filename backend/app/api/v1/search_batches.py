@@ -7,12 +7,14 @@ from app.api.deps import get_db_session, require_workspace_member
 from app.core.config import Settings, get_settings
 from app.repositories.search_batch_repository import SearchBatchRepository
 from app.schemas.search_batch import (
+    BatchPhoneEnrichResponse,
     BatchQualifyResponse,
     BatchRevealResponse,
     SearchBatchDetail,
     SearchBatchRead,
 )
 from app.services.lead_reveal_service import LeadRevealService
+from app.services.phone_enrichment_service import PhoneEnrichmentService
 from app.services.search_service import qualify_contacts_in_background
 
 router = APIRouter(prefix="/search-batches", tags=["search-batches"])
@@ -110,4 +112,49 @@ async def reveal_all_in_batch(
     result = await service.reveal_many(workspace_id=workspace_id, contacts=contacts, provider=batch.provider)
     return BatchRevealResponse(
         revealed=result.revealed, skipped=result.skipped, failed=result.failed, total=result.total
+    )
+
+
+@router.post("/{batch_id}/enrich-phones", response_model=BatchPhoneEnrichResponse)
+async def enrich_phones_in_batch(
+    batch_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    _membership=Depends(require_workspace_member),
+    session: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+):
+    """Apollo only, manual/on-demand only — never automatic, since phone
+    reveal costs extra credits (8 per mobile number found) on top of the
+    email reveal that already runs automatically. Requests an async phone
+    lookup for every contact in this batch that doesn't have one yet;
+    Apollo delivers the actual number later via webhook (see
+    app/api/v1/webhooks.py's /apollo/phone-reveal), not in this response —
+    poll/refresh the batch to see numbers land, same as scoring."""
+    batch_repo = SearchBatchRepository(session)
+    batch = await batch_repo.get_by_id(workspace_id, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search batch not found")
+    if batch.provider != "apollo":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone enrichment is only available for Apollo-sourced batches",
+        )
+    if not settings.PUBLIC_BASE_URL:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Phone enrichment is not configured (set PUBLIC_BASE_URL — Apollo must be able "
+            "to reach this server from the internet to deliver phone numbers).",
+        )
+
+    webhook_url = f"{settings.PUBLIC_BASE_URL.rstrip('/')}/api/v1/webhooks/apollo/phone-reveal"
+    if settings.APOLLO_WEBHOOK_SECRET:
+        webhook_url += f"?secret={settings.APOLLO_WEBHOOK_SECRET}"
+
+    contacts = await batch_repo.list_contacts(batch_id)
+    service = PhoneEnrichmentService(session, settings)
+    result = await service.request_many(
+        workspace_id=workspace_id, contacts=contacts, provider=batch.provider, webhook_url=webhook_url
+    )
+    return BatchPhoneEnrichResponse(
+        requested=result.requested, skipped=result.skipped, failed=result.failed, total=result.total
     )

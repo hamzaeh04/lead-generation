@@ -440,6 +440,25 @@ export async function revealBatch(workspaceId: string, batchId: string): Promise
   return data;
 }
 
+export interface BatchPhoneEnrichResponse {
+  requested: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+export async function enrichPhonesBatch(
+  workspaceId: string,
+  batchId: string
+): Promise<BatchPhoneEnrichResponse> {
+  const { data } = await api.post<BatchPhoneEnrichResponse>(
+    `/search-batches/${batchId}/enrich-phones`,
+    {},
+    { params: { workspace_id: workspaceId } }
+  );
+  return data;
+}
+
 export async function listLeads(
   workspaceId: string,
   params: {

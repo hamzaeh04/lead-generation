@@ -23,12 +23,13 @@ _ENV_ATTR_BY_FIELD: dict[str, str] = {
 
 
 def get_defaults(settings: Settings | None = None) -> WorkspaceApiKeysDefaults:
-    """Form placeholders: prefer live .env values when set, else generic hints."""
-    settings = settings or get_settings()
+    """UI placeholders only — never return real secrets over the API."""
+    # settings kept for call-site compatibility; values are hints, not credentials.
+    _ = settings or get_settings()
     return WorkspaceApiKeysDefaults(
-        apollo_api_key=(settings.APOLLO_API_KEY or "").strip() or "your-apollo-api-key",
-        smartlead_api_key=(settings.SMARTLEAD_API_KEY or "").strip() or "your-smartlead-api-key",
-        anthropic_api_key=(settings.ANTHROPIC_API_KEY or "").strip() or "your-anthropic-api-key",
+        apollo_api_key="your-apollo-api-key",
+        smartlead_api_key="your-smartlead-api-key",
+        anthropic_api_key="your-anthropic-api-key",
     )
 
 

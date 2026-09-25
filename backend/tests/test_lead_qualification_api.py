@@ -224,6 +224,13 @@ async def test_qualify_lead_returns_503_when_no_ai_provider_enabled(client, db_s
 
 
 async def test_qualify_all_in_batch_skips_already_scored(client, db_session, unique_email, monkeypatch):
+    """Regression test: qualify-all schedules scoring as a background task
+    (see qualify_contacts_in_background in search_service.py) instead of
+    awaiting it inline — a real qualify() call takes 30-40+ seconds, so
+    holding a batch-sized HTTP request open risked exceeding proxy/tunnel
+    timeouts. So the immediate response only reports what got scheduled;
+    this asserts the score actually lands via a follow-up GET, same
+    pattern as test_search_execute_auto_qualifies_new_leads."""
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
     db_session.add(ProviderConfig(provider="anthropic", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
@@ -261,6 +268,24 @@ async def test_qualify_all_in_batch_skips_already_scored(client, db_session, uni
     )
     await db_session.commit()
 
+    class _SharedSessionContextManager:
+        """qualify_contacts_in_background opens its own AsyncSessionLocal()
+        session in production — the test fixtures share one in-memory
+        SQLite `db_session` for the whole test instead, so the background
+        task must reuse that same session rather than a real
+        AsyncSessionLocal() pointed at a Postgres URL that doesn't exist
+        in this sandbox."""
+
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(
+        "app.services.search_service.AsyncSessionLocal", lambda: _SharedSessionContextManager()
+    )
+
     response = await client.post(
         f"/api/v1/search-batches/{batch_id}/qualify-all", params={"workspace_id": workspace_id}, headers=headers
     )
@@ -268,6 +293,12 @@ async def test_qualify_all_in_batch_skips_already_scored(client, db_session, uni
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 2
-    assert body["qualified"] == 1
-    assert body["skipped"] == 1
-    assert body["failed"] == 0
+    assert body["scheduled"] == 1
+    assert body["already_scored"] == 1
+
+    db_session.expire_all()
+    lead_response = await client.get(
+        f"/api/v1/leads/{not_scored_id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert lead_response.status_code == 200
+    assert lead_response.json()["latest_qualification"] is not None

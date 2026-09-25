@@ -28,9 +28,14 @@ class SearchBatchDetail(SearchBatchRead):
 
 
 class BatchQualifyResponse(BaseModel):
-    qualified: int
-    skipped: int
-    failed: int
+    """Qualification runs as a background task — a real qualify() call can
+    take 30-40+ seconds each, long enough to exceed typical proxy/tunnel
+    timeouts if the HTTP request stayed open for the whole batch. So this
+    reports what got scheduled, not final counts; poll the batch (already
+    done via the batch page's refetchInterval) to see scores land."""
+
+    scheduled: int
+    already_scored: int
     total: int
 
 

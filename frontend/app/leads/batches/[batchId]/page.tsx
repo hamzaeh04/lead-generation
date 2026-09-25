@@ -75,11 +75,18 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
   const qualifyMutation = useMutation({
     mutationFn: () => qualifyBatch(workspaceId!, batchId),
     onSuccess: (result) => {
-      toast.success(
-        `Scored ${result.qualified} lead${result.qualified === 1 ? "" : "s"}` +
-          (result.skipped ? ` · ${result.skipped} already scored` : "") +
-          (result.failed ? ` · ${result.failed} failed` : "")
-      );
+      // Scoring runs in the background now (each lead genuinely takes
+      // 30-40+ seconds, too long to hold this request open) — this only
+      // confirms what got scheduled, not final results. The batch page
+      // already polls every 4s, so scores appear on their own as they land.
+      if (result.scheduled === 0) {
+        toast.success("All leads in this batch are already scored");
+      } else {
+        toast.success(
+          `Scoring ${result.scheduled} lead${result.scheduled === 1 ? "" : "s"} in the background — ` +
+            "this can take a while, scores will appear here as they finish"
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] });
     },
     onError: (error) => toast.error(getErrorMessage(error)),

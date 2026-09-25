@@ -410,9 +410,8 @@ export async function qualifyLead(workspaceId: string, contactId: string): Promi
 }
 
 export interface BatchQualifyResponse {
-  qualified: number;
-  skipped: number;
-  failed: number;
+  scheduled: number;
+  already_scored: number;
   total: number;
 }
 

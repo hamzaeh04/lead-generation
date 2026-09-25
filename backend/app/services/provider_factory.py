@@ -64,10 +64,11 @@ _DB_KEY_FIELDS: dict[str, str] = {
 
 
 def required_env_var(provider_name: str, category: ProviderCategory) -> str | None:
-    entry = _BUILDERS.get((provider_name, category))
+    name = provider_name.strip().lower()
+    entry = _BUILDERS.get((name, category))
     if entry:
         return entry[0]
-    return _ENV_VARS.get(provider_name)
+    return _ENV_VARS.get(name)
 
 
 def resolve_api_key(
@@ -76,13 +77,14 @@ def resolve_api_key(
     workspace_keys: WorkspaceApiKeys | None = None,
 ) -> str | None:
     """Prefer workspace DB key; fall back to .env / process settings."""
-    field = _DB_KEY_FIELDS.get(provider_name)
+    name = provider_name.strip().lower()
+    field = _DB_KEY_FIELDS.get(name)
     if workspace_keys is not None and field:
         db_value = getattr(workspace_keys, field, None)
         if isinstance(db_value, str) and db_value.strip():
             return db_value.strip()
 
-    env_var = _ENV_VARS.get(provider_name)
+    env_var = _ENV_VARS.get(name)
     if env_var:
         env_value = getattr(settings, env_var, None)
         if isinstance(env_value, str) and env_value.strip():
@@ -97,7 +99,8 @@ def build_provider(
     *,
     api_key: str | None = None,
 ) -> BaseProvider | None:
-    entry = _BUILDERS.get((provider_name, category))
+    name = provider_name.strip().lower()
+    entry = _BUILDERS.get((name, category))
     if entry is None:
         return None
     env_var, provider_cls = entry

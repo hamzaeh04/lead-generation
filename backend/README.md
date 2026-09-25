@@ -50,13 +50,13 @@ CORS_ORIGINS=http://localhost:3000
 # Provider keys (also overridable per workspace in Settings UI)
 APOLLO_API_KEY=
 SMARTLEAD_API_KEY=
-GROQ_API_KEY=
+ANTHROPIC_API_KEY=
 ```
 
 Provider credentials resolve in order:
 
 1. Workspace row in `workspace_api_keys` (Settings → Provider API keys)
-2. Process env / `.env` (`APOLLO_API_KEY`, `SMARTLEAD_API_KEY`, `GROQ_API_KEY`)
+2. Process env / `.env` (`APOLLO_API_KEY`, `SMARTLEAD_API_KEY`, `ANTHROPIC_API_KEY`)
 
 ### Neon / hosted Postgres
 

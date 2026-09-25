@@ -1154,9 +1154,9 @@ export async function deleteEmailSetup(emailSetupId: string): Promise<void> {
 export async function importEmailSetupsCsv(file: File): Promise<EmailSetupImportResult> {
   const form = new FormData();
   form.append("file", file);
-  const { data } = await api.post<EmailSetupImportResult>("/email-setups/import", form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  // Let the browser set multipart Content-Type with boundary — forcing
+  // "multipart/form-data" alone breaks FastAPI file parsing.
+  const { data } = await api.post<EmailSetupImportResult>("/email-setups/import", form);
   return data;
 }
 

@@ -1,0 +1,8 @@
+name,smtp_host,smtp_port,smtp_email,smtp_password,smtp_use_tls
+NextApps - hello@nextappsinc.net,smtppro.zoho.com,465,hello@nextappsinc.net,6z.Eoiqi,true
+NextApps - support@nextappsinc.net,smtppro.zoho.com,465,support@nextappsinc.net,kve3.pnK,true
+NextApps - sales@nextappsinc.net,smtppro.zoho.com,465,sales@nextappsinc.net,nptI$1rv,true
+NextApps - hello@nextappsinc.org,smtppro.zoho.com,465,hello@nextappsinc.org,e2vv-rPm,true
+NextApps - info@nextappsinc.org,smtppro.zoho.com,465,info@nextappsinc.org,fMowmm1#,true
+NextApps - support@nextappsinc.org,smtppro.zoho.com,465,support@nextappsinc.org,eyer@2Ag,true
+NextApps - sales@nextappsinc.org,smtppro.zoho.com,465,sales@nextappsinc.org,I5ftvyi-,true

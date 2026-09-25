@@ -20,6 +20,7 @@ import {
   type EmailSetupCreatePayload,
   type EmailSetupDefaults,
 } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 
 const inputClass =
   "rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-fg placeholder:text-fgMuted focus:border-accent focus:outline-none";
@@ -245,8 +246,8 @@ function CsvImportCard({
       onImported(result);
       if (inputRef.current) inputRef.current.value = "";
     },
-    onError: () => {
-      setMessage("Import failed — check CSV headers and try again.");
+    onError: (error) => {
+      setMessage(getErrorMessage(error, "Import failed — check CSV headers and try again."));
     },
   });
 

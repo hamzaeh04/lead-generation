@@ -39,20 +39,44 @@ from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
+
+# Who we are pitching as — kept explicit so the model never invents our offer.
+_SELLER_CONTEXT: dict[str, str] = {
+    "our_company_name": "NextApps",
+    "our_services": (
+        "custom web applications and mobile applications "
+        "(design, build, and ongoing product engineering)"
+    ),
+    "our_offer": (
+        "NextApps helps organizations ship and scale reliable web apps and "
+        "mobile apps — from MVPs to production platforms — with clear delivery "
+        "and modern product engineering."
+    ),
+}
 
 _INSTRUCTIONS = (
-    "You are drafting a short, truthful cold outreach email. "
-    "Use ONLY the facts provided in the JSON below — never invent or assume "
-    "any fact not explicitly listed (no fabricated awards, customers, "
-    "revenue, funding, projects, or partnerships). If a company_website_excerpt "
-    "field is present, it is real text scraped live from the company's own "
-    "site just now — you may draw on it the same as any other listed fact, "
-    "but still never state anything beyond what it or the other fields "
-    "actually say. If the provided facts are limited, write generic but "
-    "truthful personalization rather than guessing. Respond with a JSON "
-    "object with exactly these string keys: "
-    '"subject", "opening_line", "body", "cta", "outreach_angle".'
+    "You are drafting a short, truthful cold outreach email from NextApps. "
+    "Our only offer is custom web application and mobile application development "
+    "services (see our_company_name, our_services, and our_offer in the JSON). "
+    "The email must clearly pitch those services and invite a short conversation "
+    "about a possible web/mobile project or product build. "
+    "Personalize using ONLY the prospect facts in the JSON — never invent or "
+    "assume any fact about the prospect not explicitly listed (no fabricated "
+    "awards, customers, revenue, funding, projects, or partnerships). "
+    "If a company_website_excerpt field is present, it is real text scraped "
+    "from the company's own site — you may reference it the same as any other "
+    "listed fact, but still never state anything beyond what it or the other "
+    "fields actually say. "
+    "Connect their real context (role, company, location, public excerpt) to "
+    "why a modern web or mobile app partnership with NextApps could help — "
+    "without inventing their needs. If facts are limited, keep personalization "
+    "light and still pitch NextApps web/mobile services truthfully. "
+    "Tone: professional, concise, human — not salesy hype. "
+    "Respond with a JSON object with exactly these string keys: "
+    '"subject", "opening_line", "body", "cta", "outreach_angle". '
+    "body should be the full email body (greeting through soft close) and "
+    "must mention NextApps and web/mobile application services."
 )
 
 
@@ -183,6 +207,7 @@ class PersonalizationService:
         website_excerpt: str | None = None,
     ) -> dict[str, str]:
         fields: dict[str, str] = {}
+        fields.update(_SELLER_CONTEXT)
         if contact.full_name:
             fields["contact_full_name"] = contact.full_name
         if contact.job_title:

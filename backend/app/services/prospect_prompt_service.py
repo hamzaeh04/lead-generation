@@ -83,9 +83,15 @@ class ProspectPromptService:
         instructions = (
             "Extract prospect-search filters from the user's sentence below. "
             f"Only use these field names, all optional: {schema} "
-            "Only include a field if the sentence actually implies it — never "
-            "guess or invent a value for something it doesn't mention. Omit "
-            "fields entirely rather than filling them with a default or "
+            "The sentence may contain typos, missing words, or informal "
+            "phrasing (e.g. 'resturent onwer' means 'restaurant owner') — "
+            "interpret the writer's actual intent and extract the corrected, "
+            "properly-spelled value; never copy a misspelling into the "
+            "output. This is about correcting how a real, stated fact is "
+            "written, not about inventing a fact — still only include a "
+            "field if the sentence actually implies it, and never guess or "
+            "invent a value for something it doesn't mention. Omit fields "
+            "entirely rather than filling them with a default or "
             "placeholder. Respond with a single flat JSON object using only "
             "the field names above."
         )

@@ -46,6 +46,9 @@ import {
 import { getErrorMessage } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace-context";
 
+const inputClass =
+  "rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-fg placeholder:text-fgMuted focus:border-accent focus:outline-none";
+
 const roleOptions: WorkspaceRole[] = ["owner", "admin", "member", "viewer"];
 const planOptions: WorkspacePlan[] = ["free", "starter", "professional", "agency", "enterprise"];
 

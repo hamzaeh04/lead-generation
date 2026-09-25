@@ -166,6 +166,16 @@ async def test_search_execute_rejects_disabled_provider(client, unique_email):
 
 
 async def test_search_execute_reports_missing_credentials(client, db_session, unique_email, monkeypatch):
+<<<<<<< HEAD
+=======
+    from app.core.config import get_settings
+
+    # A developer's real backend/.env (with a live APOLLO_API_KEY) is loaded
+    # into the process-wide cached Settings instance, so this can't rely on
+    # the key being ambiently unset — force it off for this test instead.
+    monkeypatch.setattr(get_settings(), "APOLLO_API_KEY", None)
+
+>>>>>>> e1995224d5d926c13a142675902eb9770dc0a747
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
     db_session.add(
@@ -175,11 +185,16 @@ async def test_search_execute_reports_missing_credentials(client, db_session, un
     )
     await db_session.commit()
 
+<<<<<<< HEAD
     monkeypatch.setattr(
         "app.services.search_service.provider_factory.build_provider_for_workspace",
         AsyncMock(return_value=None),
     )
 
+=======
+    # The registry allows the provider, but the factory can't build a
+    # working instance without credentials.
+>>>>>>> e1995224d5d926c13a142675902eb9770dc0a747
     response = await client.post(
         "/api/v1/search/execute",
         json={
@@ -320,14 +335,29 @@ async def test_parse_prompt_returns_502_when_ai_output_is_invalid(client, db_ses
 async def test_parse_prompt_returns_503_when_no_ai_provider_has_credentials(
     client, db_session, unique_email, monkeypatch
 ):
+<<<<<<< HEAD
+=======
+    from app.core.config import get_settings
+
+    # A developer's real backend/.env (with a live GROQ_API_KEY) is loaded
+    # into the process-wide cached Settings instance, so this can't rely on
+    # the key being ambiently unset — force it off for this test instead.
+    monkeypatch.setattr(get_settings(), "GROQ_API_KEY", None)
+
+>>>>>>> e1995224d5d926c13a142675902eb9770dc0a747
     headers, workspace_id = await _register_and_get_workspace(client, unique_email)
 
     db_session.add(ProviderConfig(provider="groq", category=ProviderCategory.AI, enabled=True, priority=1))
     await db_session.commit()
+<<<<<<< HEAD
     monkeypatch.setattr(
         "app.services.prospect_prompt_service.provider_factory.build_provider_for_workspace",
         AsyncMock(return_value=None),
     )
+=======
+    # The registry allows the provider, but the factory can't build a
+    # working instance without credentials.
+>>>>>>> e1995224d5d926c13a142675902eb9770dc0a747
 
     response = await client.post(
         "/api/v1/search/parse-prompt",

@@ -232,17 +232,28 @@ class CampaignSendingService:
         generations = await self.generations.list_for_contact(campaign.workspace_id, contact.id)
         latest_personalization = generations[0] if generations else None
 
-        # Generate a per-lead draft just-in-time when the send slot arrives
-        # (Start Campaign paced flow). Fail this recipient rather than
-        # sending a blank {{personalized_*}} template.
         uses_ai_template = "{{personalized_subject}}" in (step.subject or "") or "{{personalized_body}}" in (
             step.body or ""
         )
-        if uses_ai_template and latest_personalization is None:
+        has_complete_draft = bool(
+            latest_personalization
+            and (latest_personalization.subject or "").strip()
+            and (latest_personalization.body or "").strip()
+        )
+
+        # Start Campaign uses {{personalized_*}} steps: reuse an existing draft
+        # for this lead, or generate one now before send. Static/manual campaign
+        # steps keep template rendering and do not require a draft.
+        if uses_ai_template and not has_complete_draft:
             try:
                 latest_personalization = await PersonalizationService(
                     self.session, self.settings
                 ).personalize(workspace_id=campaign.workspace_id, contact_id=contact.id)
+                has_complete_draft = bool(
+                    latest_personalization
+                    and (latest_personalization.subject or "").strip()
+                    and (latest_personalization.body or "").strip()
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "campaign_send_personalize_failed",
@@ -256,29 +267,34 @@ class CampaignSendingService:
         unsubscribe_token = create_unsubscribe_token(workspace_id=campaign.workspace_id, contact_id=contact.id)
         unsubscribe_url = f"/unsubscribe/{unsubscribe_token}"
 
-        context = build_context(
-            contact=contact,
-            company=company,
-            personalization=latest_personalization,
-            unsubscribe_url=unsubscribe_url,
-            intent_signal=latest_signal,
-        )
-        # Fall back to full_name when first_name is blank so "Hi {{first_name}}" still greets.
-        if not context.get("first_name") and contact.full_name:
-            context["first_name"] = contact.full_name.split()[0]
+        if has_complete_draft and latest_personalization is not None:
+            # Send the saved draft email as-is (subject + body).
+            rendered_subject = (latest_personalization.subject or "").strip()
+            rendered_body = (latest_personalization.body or "").strip()
+        else:
+            context = build_context(
+                contact=contact,
+                company=company,
+                personalization=latest_personalization,
+                unsubscribe_url=unsubscribe_url,
+                intent_signal=latest_signal,
+            )
+            if not context.get("first_name") and contact.full_name:
+                context["first_name"] = contact.full_name.split()[0]
 
-        subject_tpl, body_tpl = ensure_lead_personalization(step.subject, step.body)
-        rendered_subject = render_template(subject_tpl, context).text
-        rendered_body = render_template(body_tpl, context).text
+            subject_tpl, body_tpl = ensure_lead_personalization(step.subject, step.body)
+            rendered_subject = render_template(subject_tpl, context).text
+            rendered_body = render_template(body_tpl, context).text
+            if latest_personalization:
+                if not rendered_subject.strip() and latest_personalization.subject:
+                    rendered_subject = latest_personalization.subject
+                if not rendered_body.strip() and latest_personalization.body:
+                    rendered_body = latest_personalization.body
 
-        # Prefer a full AI draft when the template rendered empty but a
-        # generation exists (covers older campaign steps that don't use
-        # {{personalized_*}} placeholders yet).
-        if latest_personalization:
-            if not rendered_subject.strip() and latest_personalization.subject:
-                rendered_subject = latest_personalization.subject
-            if not rendered_body.strip() and latest_personalization.body:
-                rendered_body = latest_personalization.body
+        if uses_ai_template and not (rendered_subject.strip() and rendered_body.strip()):
+            recipient.status = RecipientStatus.FAILED
+            summary["failed"] += 1
+            return
 
         # Plain-text drafts become simple HTML so SMTP html_body still wraps.
         if rendered_body and "<" not in rendered_body:

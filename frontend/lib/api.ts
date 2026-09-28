@@ -1013,6 +1013,8 @@ export interface EnrollResponse {
   sent?: number;
   failed?: number;
   suppressed?: number;
+  drafts_ready?: number;
+  drafts_generated?: number;
 }
 
 export async function enrollContacts(

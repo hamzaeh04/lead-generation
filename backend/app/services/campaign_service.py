@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.models.campaign import Campaign, CampaignStatus
+from app.repositories.ai_generation_repository import AIGenerationRepository
 from app.repositories.campaign_recipient_repository import CampaignRecipientRepository
 from app.repositories.campaign_repository import CampaignRepository
 from app.repositories.contact_repository import ContactRepository
@@ -16,6 +17,10 @@ from app.repositories.email_setup_repository import EmailSetupRepository
 from app.repositories.search_batch_repository import SearchBatchRepository
 from app.services.campaign_schedule import build_staggered_slots
 from app.services.campaign_sending_service import CampaignSendingService
+from app.services.personalization_service import PersonalizationService
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 _ALLOWED_INTERVALS = {5, 10, 15, 30, 45, 60}
 
@@ -29,6 +34,7 @@ class CampaignService:
         self.contacts = ContactRepository(session)
         self.batches = SearchBatchRepository(session)
         self.email_setups = EmailSetupRepository(session)
+        self.generations = AIGenerationRepository(session)
 
     async def enroll_contacts(
         self,
@@ -162,6 +168,18 @@ class CampaignService:
         for contact in newly_enrolled_contacts:
             self.session.expire(contact, ["campaign_recipients"])
 
+        # Link enrolled batches to this campaign and mark outreach as sending.
+        for batch_id in batch_ids or []:
+            batch = await self.batches.get_by_id(workspace_id, batch_id)
+            if batch is None:
+                continue
+            batch.outreach_campaign_id = campaign.id
+            batch.outreach_status = "sending"
+            if email_setup_id is not None:
+                batch.email_setup_id = email_setup_id
+        if batch_ids:
+            await self.session.commit()
+
         result = {
             "enrolled": enrolled,
             "already_enrolled": already_enrolled,
@@ -169,12 +187,22 @@ class CampaignService:
             "sent": 0,
             "failed": 0,
             "suppressed": 0,
+            "drafts_ready": 0,
+            "drafts_generated": 0,
         }
 
         if email_setup_id is not None and self.settings is not None:
             if campaign.status in (CampaignStatus.DRAFT, CampaignStatus.SCHEDULED, CampaignStatus.PAUSED):
                 campaign.status = CampaignStatus.RUNNING
                 await self.session.commit()
+
+            # Ensure every enrolled lead has a draft before the first send:
+            # reuse existing AI drafts; generate only when missing.
+            draft_stats = await self._ensure_drafts(
+                workspace_id=workspace_id, contacts=newly_enrolled_contacts
+            )
+            result["drafts_ready"] = draft_stats["ready"]
+            result["drafts_generated"] = draft_stats["generated"]
 
             if use_paced:
                 # Process at most one due send now; Celery continues the queue.
@@ -198,6 +226,34 @@ class CampaignService:
             result["suppressed"] = send_summary.get("suppressed", 0)
 
         return result
+
+    async def _ensure_drafts(self, *, workspace_id: uuid.UUID, contacts: list) -> dict:
+        """Reuse existing drafts; generate any that are still missing."""
+        if not contacts or self.settings is None:
+            return {"ready": 0, "generated": 0}
+        personalizer = PersonalizationService(self.session, self.settings)
+        ready = generated = 0
+        for contact in contacts:
+            existing = await self.generations.list_for_contact(workspace_id, contact.id)
+            has_draft = bool(
+                existing
+                and (existing[0].subject or "").strip()
+                and (existing[0].body or "").strip()
+            )
+            if has_draft:
+                ready += 1
+                continue
+            try:
+                await personalizer.personalize(workspace_id=workspace_id, contact_id=contact.id)
+                generated += 1
+                ready += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "campaign_enroll_draft_failed",
+                    contact_id=str(contact.id),
+                    error=str(exc),
+                )
+        return {"ready": ready, "generated": generated}
 
     async def _upsert_step_one(self, *, campaign_id: uuid.UUID, subject: str, body: str) -> None:
         """Create or update step 1 with the Sequence subject/body from the enroll payload."""

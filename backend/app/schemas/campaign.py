@@ -90,6 +90,8 @@ class EnrollResponse(BaseModel):
     sent: int = 0
     failed: int = 0
     suppressed: int = 0
+    drafts_ready: int = 0
+    drafts_generated: int = 0
 
 
 class ProcessCampaignResponse(BaseModel):

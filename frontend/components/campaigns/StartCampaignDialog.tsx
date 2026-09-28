@@ -137,6 +137,8 @@ export function StartCampaignDialog({
       setOpen(false);
       toast.success(
         `Campaign started · ${enroll.enrolled} enrolled` +
+          (enroll.drafts_ready ? ` · ${enroll.drafts_ready} drafts ready` : "") +
+          (enroll.drafts_generated ? ` (${enroll.drafts_generated} newly generated)` : "") +
           (enroll.sent ? ` · ${enroll.sent} sent now` : " · sends on schedule")
       );
       onStarted?.();
@@ -158,9 +160,9 @@ export function StartCampaignDialog({
           <DialogHeader>
             <DialogTitle>Start campaign</DialogTitle>
             <DialogDescription>
-              Create a paced campaign for this batch. Each lead gets a personalized email generated
-              when their send slot arrives — one lead every selected interval, only inside your time
-              window.
+              Enrolls this batch and sends each lead&apos;s draft email on your schedule. Existing
+              drafts are reused; missing drafts are generated automatically before send — one lead
+              every selected interval, only inside your time window.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -329,8 +331,8 @@ export function StartCampaignDialog({
             </div>
 
             <p className="sm:col-span-2 text-[12.5px] text-fgMuted">
-              Email copy is generated per lead (NextApps web/mobile pitch) when that lead&apos;s slot
-              is due — same personalization engine as Generate draft.
+              Each send uses that lead&apos;s saved draft (subject + body). If a lead has no draft
+              yet, one is generated first, then emailed.
             </p>
 
             <DialogFooter className="sm:col-span-2">

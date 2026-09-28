@@ -1239,6 +1239,7 @@ export interface EmailSetupUpdatePayload {
 
 export interface EmailSetupImportResult {
   created: number;
+  updated: number;
   skipped: number;
   errors: { row_number: number; message: string }[];
 }

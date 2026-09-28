@@ -21,6 +21,7 @@ import {
   type EmailSetupDefaults,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
+import { toast } from "sonner";
 
 const inputClass =
   "rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-fg placeholder:text-fgMuted focus:border-accent focus:outline-none";
@@ -211,15 +212,13 @@ function EmailSetupForm({
         </label>
         <div className="flex items-center gap-2 sm:col-span-2">
           <Button type="submit" disabled={isPending}>
-            {isPending ? <Spinner className="h-3.5 w-3.5" /> : mode === "create" ? "Create" : "Save"}
+            {isPending ? <Spinner className="h-3.5 w-3.5" /> : mode === "create" ? "Save" : "Save"}
           </Button>
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
           {error && (
-            <p className="text-[12.5px] text-danger">
-              Could not save — smtp_email may already be in use.
-            </p>
+            <p className="text-[12.5px] text-danger">Could not save — check the fields and try again.</p>
           )}
         </div>
       </form>
@@ -230,7 +229,7 @@ function EmailSetupForm({
 function CsvImportCard({
   onImported,
 }: {
-  onImported: (result: { created: number; skipped: number }) => void;
+  onImported: (result: { created: number; updated: number; skipped: number }) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -238,11 +237,17 @@ function CsvImportCard({
   const mutation = useMutation({
     mutationFn: (file: File) => importEmailSetupsCsv(file),
     onSuccess: (result) => {
-      setMessage(
-        `Imported ${result.created} account${result.created === 1 ? "" : "s"}` +
-          (result.skipped ? `, skipped ${result.skipped}` : "") +
-          "."
-      );
+      const parts: string[] = [];
+      if (result.created) {
+        parts.push(`created ${result.created}`);
+      }
+      if (result.updated) {
+        parts.push(`updated ${result.updated}`);
+      }
+      if (result.skipped) {
+        parts.push(`skipped ${result.skipped}`);
+      }
+      setMessage(parts.length ? `Import finished — ${parts.join(", ")}.` : "Nothing to import.");
       onImported(result);
       if (inputRef.current) inputRef.current.value = "";
     },
@@ -312,19 +317,26 @@ function EmailSetupContent() {
 
   const createMutation = useMutation({
     mutationFn: (payload: EmailSetupCreatePayload) => createEmailSetup(payload),
-    onSuccess: () => {
+    onSuccess: (setup, payload) => {
       queryClient.invalidateQueries({ queryKey: ["email-setups"] });
       setFormOpen(false);
+      const existed = setups.some(
+        (s) => s.smtp_email.toLowerCase() === payload.smtp_email.trim().toLowerCase()
+      );
+      toast.success(existed ? `Updated ${setup.smtp_email}` : `Added ${setup.smtp_email}`);
     },
+    onError: (error) => toast.error(getErrorMessage(error, "Could not save email setup.")),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Partial<EmailSetupCreatePayload> }) =>
       updateEmailSetup(id, payload),
-    onSuccess: () => {
+    onSuccess: (setup) => {
       queryClient.invalidateQueries({ queryKey: ["email-setups"] });
       setEditing(null);
+      toast.success(`Updated ${setup.smtp_email}`);
     },
+    onError: (error) => toast.error(getErrorMessage(error, "Could not save email setup.")),
   });
 
   const deleteMutation = useMutation({

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Briefcase, Building2, ExternalLink, Mail, MapPin, Phone, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { tierTone } from "@/components/leads/lead-table-columns";
@@ -35,7 +35,6 @@ import {
   personalizeLead,
   updateLeadStatus,
   updateLeadTask,
-  type Contact,
   type LeadStatus,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
@@ -86,13 +85,15 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
     enabled: !!workspaceId,
   });
 
+  const [autoDraftFailed, setAutoDraftFailed] = useState(false);
+
   const personalizationsQuery = useQuery({
     queryKey: ["lead-personalizations", workspaceId, contactId],
     queryFn: () => listLeadPersonalizations(workspaceId!, contactId),
     enabled: !!workspaceId,
-    // Auto-draft runs in the background after batch create — poll briefly
-    // until a draft lands so the user doesn't need a manual refresh.
+    // Poll until a draft lands (batch auto-draft or this page's auto-generate).
     refetchInterval: (query) => {
+      if (autoDraftFailed) return false;
       const data = query.state.data;
       if (data && data.length > 0) return false;
       return 4000;
@@ -109,13 +110,43 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
   });
 
   const personalizeMutation = useMutation({
-    mutationFn: () => personalizeLead(workspaceId!, contactId),
-    onSuccess: () => {
+    mutationFn: ({ manual }: { manual: boolean }) => personalizeLead(workspaceId!, contactId),
+    onSuccess: (_data, vars) => {
+      setAutoDraftFailed(false);
       queryClient.invalidateQueries({ queryKey: ["lead-personalizations", workspaceId, contactId] });
-      toast.success("Draft generated");
+      if (vars.manual) toast.success("Draft generated");
     },
-    onError: (error) => toast.error(getErrorMessage(error, "Draft generation failed.")),
+    onError: (error, vars) => {
+      if (vars.manual) {
+        toast.error(getErrorMessage(error, "Draft generation failed."));
+      } else {
+        setAutoDraftFailed(true);
+      }
+    },
   });
+
+  // If this lead never got a background draft (older leads, failed job, etc.),
+  // generate one automatically — no "Generate draft" click required.
+  const autoDraftAttempted = useRef(false);
+  useEffect(() => {
+    if (autoDraftAttempted.current) return;
+    if (!workspaceId || !leadQuery.data) return;
+    if (personalizationsQuery.isLoading) return;
+    if (personalizeMutation.isPending) return;
+    const drafts = personalizationsQuery.data;
+    if (drafts === undefined) return;
+    if (drafts.length > 0) return;
+    if (!(leadQuery.data.email || "").trim()) return;
+    autoDraftAttempted.current = true;
+    personalizeMutation.mutate({ manual: false });
+  }, [
+    workspaceId,
+    leadQuery.data,
+    personalizationsQuery.data,
+    personalizationsQuery.isLoading,
+    personalizeMutation.isPending,
+    personalizeMutation.mutate,
+  ]);
 
   const noteMutation = useMutation({
     mutationFn: (text: string) => createLeadNote(workspaceId!, contactId, text),
@@ -159,6 +190,11 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
   }
 
   const lead = leadQuery.data;
+  const hasEmail = !!(lead.email || "").trim();
+  const drafts = personalizationsQuery.data ?? [];
+  const hasDraft = drafts.length > 0;
+  const showDraftGenerating =
+    hasEmail && !hasDraft && !autoDraftFailed && (personalizeMutation.isPending || personalizationsQuery.isLoading);
 
   return (
     <div className="flex flex-col gap-6">
@@ -301,28 +337,50 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
                 AI personalization
               </h2>
               <p className="text-sm text-fgMuted">
-                Drafts are generated automatically when a batch is created. Use this button to
-                regenerate from this contact&apos;s latest data.
+                Draft email is generated automatically for every lead with an email. Use regenerate
+                to refresh from this contact&apos;s latest data.
               </p>
-              <Button
-                onClick={() => personalizeMutation.mutate()}
-                loading={personalizeMutation.isPending}
-                className="self-start"
-              >
-                {personalizationsQuery.data && personalizationsQuery.data.length > 0
-                  ? "Regenerate draft"
-                  : "Generate draft"}
-              </Button>
-              {personalizationsQuery.data && personalizationsQuery.data.length > 0 && (
-                <div className="flex flex-col gap-3 border-t border-border pt-3">
-                  {personalizationsQuery.data.slice(0, 1).map((gen) => (
-                    <div key={gen.id} className="flex flex-col gap-1.5 text-sm">
-                      {gen.subject && <p className="font-medium text-fg">{gen.subject}</p>}
-                      {gen.body && <p className="whitespace-pre-wrap text-fgMuted">{gen.body}</p>}
-                      <span className="text-xs text-fgSubtle">source: {gen.personalization_source ?? "generic"}</span>
-                    </div>
-                  ))}
-                </div>
+              {showDraftGenerating ? (
+                <p className="text-sm text-fgMuted">Generating draft email…</p>
+              ) : null}
+              {hasDraft && (
+                <>
+                  <Button
+                    onClick={() => personalizeMutation.mutate({ manual: true })}
+                    loading={personalizeMutation.isPending}
+                    className="self-start"
+                    variant="ghost"
+                  >
+                    Regenerate draft
+                  </Button>
+                  <div className="flex flex-col gap-3 border-t border-border pt-3">
+                    {drafts.slice(0, 1).map((gen) => (
+                      <div key={gen.id} className="flex flex-col gap-1.5 text-sm">
+                        {gen.subject && <p className="font-medium text-fg">{gen.subject}</p>}
+                        {gen.body && <p className="whitespace-pre-wrap text-fgMuted">{gen.body}</p>}
+                        <span className="text-xs text-fgSubtle">
+                          source: {gen.personalization_source ?? "generic"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {!hasDraft && !personalizeMutation.isPending && !hasEmail && (
+                <p className="text-sm text-fgMuted">Add an email to generate a draft.</p>
+              )}
+              {autoDraftFailed && !hasDraft && !personalizeMutation.isPending && hasEmail && (
+                <Button
+                  onClick={() => {
+                    autoDraftAttempted.current = true;
+                    setAutoDraftFailed(false);
+                    personalizeMutation.mutate({ manual: true });
+                  }}
+                  loading={personalizeMutation.isPending}
+                  className="self-start"
+                >
+                  Retry draft
+                </Button>
               )}
             </Card>
           </div>

@@ -111,11 +111,25 @@ class EmailSetupService:
             )
 
     async def create(self, payload: EmailSetupCreate) -> EmailSetup:
-        await self._ensure_unique_email(str(payload.smtp_email))
+        """Create a new setup, or update the existing one when smtp_email matches."""
+        email = str(payload.smtp_email).strip().lower()
+        existing = await self.repo.get_by_email(email)
+        if existing is not None:
+            if payload.is_default:
+                await self.repo.clear_default(except_id=existing.id)
+            existing.name = payload.name
+            existing.smtp_host = payload.smtp_host
+            existing.smtp_port = payload.smtp_port
+            existing.smtp_email = email
+            existing.smtp_password = payload.smtp_password
+            existing.smtp_use_tls = payload.smtp_use_tls
+            existing.is_default = payload.is_default
+            return existing
+
         if payload.is_default:
             await self.repo.clear_default()
         data = payload.model_dump()
-        data["smtp_email"] = str(payload.smtp_email).strip().lower()
+        data["smtp_email"] = email
         return self.repo.create(**data)
 
     async def update(self, setup_id: uuid.UUID, payload: EmailSetupUpdate) -> EmailSetup | None:
@@ -160,6 +174,7 @@ class EmailSetupService:
             )
 
         created = 0
+        updated = 0
         skipped = 0
         errors: list[EmailSetupImportRowError] = []
 
@@ -214,12 +229,13 @@ class EmailSetupService:
                 skipped += 1
                 continue
 
-            try:
-                await self.create(payload)
-            except ValueError as exc:
-                errors.append(EmailSetupImportRowError(row_number=index, message=str(exc)))
-                skipped += 1
-                continue
-            created += 1
+            existing = await self.repo.get_by_email(email)
+            await self.create(payload)
+            if existing is not None:
+                updated += 1
+            else:
+                created += 1
 
-        return EmailSetupImportResult(created=created, skipped=skipped, errors=errors)
+        return EmailSetupImportResult(
+            created=created, updated=updated, skipped=skipped, errors=errors
+        )

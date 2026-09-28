@@ -7,6 +7,7 @@ from app.api.deps import get_current_user, get_db_session, require_workspace_mem
 from app.core.config import Settings, get_settings
 from app.models.user import User
 from app.providers.base import ProviderCategory
+from app.repositories.ai_generation_repository import AIGenerationRepository
 from app.repositories.search_batch_repository import SearchBatchRepository
 from app.schemas.search_batch import (
     BatchPhoneEnrichResponse,
@@ -16,6 +17,7 @@ from app.schemas.search_batch import (
     SearchBatchDetail,
     SearchBatchRead,
 )
+from app.services.batch_outreach_service import draft_batch_in_background
 from app.services.lead_reveal_service import LeadRevealService
 from app.services.phone_enrichment_service import PhoneEnrichmentService
 from app.services.search_service import qualify_contacts_in_background
@@ -62,14 +64,38 @@ async def create_search_batch(
 async def get_search_batch(
     batch_id: uuid.UUID,
     workspace_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     _membership=Depends(require_workspace_member),
     session: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ):
     repo = SearchBatchRepository(session)
     batch = await repo.get_by_id(workspace_id, batch_id)
     if batch is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search batch not found")
     contacts = await repo.list_contacts(batch_id)
+
+    # Backfill drafts for older batches (or failed jobs) that never got them.
+    # Only when idle/failed/skipped — avoid re-queuing on every poll for batches
+    # already marked ready/completed.
+    if batch.outreach_status in ("idle", "failed", "skipped"):
+        with_email = [c for c in contacts if (c.email or "").strip()]
+        if with_email:
+            generations = AIGenerationRepository(session)
+            needs_draft = False
+            for contact in with_email:
+                existing = await generations.list_for_contact(workspace_id, contact.id)
+                if not existing:
+                    needs_draft = True
+                    break
+            if needs_draft:
+                background_tasks.add_task(
+                    draft_batch_in_background,
+                    workspace_id=workspace_id,
+                    batch_id=batch_id,
+                    settings=settings,
+                )
+
     return SearchBatchDetail(**SearchBatchRead.model_validate(batch).model_dump(), contacts=contacts)
 
 

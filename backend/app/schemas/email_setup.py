@@ -56,5 +56,6 @@ class EmailSetupImportRowError(BaseModel):
 
 class EmailSetupImportResult(BaseModel):
     created: int
+    updated: int = 0
     skipped: int
     errors: list[EmailSetupImportRowError]

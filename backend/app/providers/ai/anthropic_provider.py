@@ -52,6 +52,14 @@ class AnthropicProvider(AIProvider):
 
     async def generate(self, request: AIGenerationRequest) -> AIGenerationResult:
         facts = json.dumps(request.source_fields, indent=2)
+        # Lead qualification payloads already match the prompt's USER MESSAGE
+        # TEMPLATE shape (lead_record / our_records / icp_config) — ask the
+        # model to score rather than treat them as generic "known facts".
+        user_content = (
+            f"Score this lead.\n\n{facts}"
+            if "lead_record" in request.source_fields
+            else f"Known facts (JSON):\n{facts}"
+        )
         payload = await request_json(
             self._client,
             "POST",
@@ -66,7 +74,7 @@ class AnthropicProvider(AIProvider):
                 "max_tokens": request.max_tokens,
                 "system": request.instructions,
                 "messages": [
-                    {"role": "user", "content": f"Known facts (JSON):\n{facts}"},
+                    {"role": "user", "content": user_content},
                     {"role": "assistant", "content": "{"},
                 ],
             },

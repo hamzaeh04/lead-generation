@@ -45,6 +45,12 @@ const FIELD_LABELS: Record<(typeof IMPORTABLE_LEAD_FIELDS)[number], string> = {
 
 const SKIP = "__skip__";
 
+const CSV_TEMPLATE = [
+  "Company Name,Website,Email,First Name,Last Name,Job Title,Phone,City,State,Country,Industry",
+  "Acme Dental Group,https://acmedental.example,jordan@acmedental.example,Jordan,Alvarez,Owner,555-0100,Miami,FL,US,Healthcare",
+  "Sunshine Roofing Co,https://sunshineroofing.example,sam@sunshineroofing.example,Sam,Chen,CEO,555-0101,Dallas,TX,US,Construction",
+].join("\n");
+
 export function ImportLeadsCsvDialog({
   workspaceId,
   batchId,
@@ -65,6 +71,18 @@ export function ImportLeadsCsvDialog({
     setPreview(null);
     setMapping({});
     if (inputRef.current) inputRef.current.value = "";
+  }
+
+  function downloadTemplate() {
+    const blob = new Blob(["\ufeff" + CSV_TEMPLATE + "\n"], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "leads-import-template.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   const previewMutation = useMutation({
@@ -120,6 +138,14 @@ export function ImportLeadsCsvDialog({
           </DialogHeader>
 
           <div className="flex flex-col gap-4">
+            <button
+              type="button"
+              onClick={downloadTemplate}
+              className="w-fit text-sm text-accent hover:underline"
+            >
+              Download CSV template
+            </button>
+
             <Field label="CSV file">
               <input
                 ref={inputRef}

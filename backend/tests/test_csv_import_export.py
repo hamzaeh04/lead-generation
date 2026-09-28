@@ -137,6 +137,8 @@ async def test_export_returns_csv_with_imported_leads(client, unique_email):
     body = response.text
     assert "Acme Dental Group" in body
     assert "jordan@acmedental.example" in body
+    assert "First Name" in body
+    assert "Jordan" in body
 
 
 async def test_import_into_batch_links_contacts(client, db_session, unique_email):

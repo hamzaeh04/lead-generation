@@ -49,6 +49,11 @@ class OpenAIProvider(AIProvider):
 
     async def generate(self, request: AIGenerationRequest) -> AIGenerationResult:
         facts = json.dumps(request.source_fields, indent=2)
+        user_content = (
+            f"Score this lead.\n\n{facts}"
+            if "lead_record" in request.source_fields
+            else f"Known facts (JSON):\n{facts}"
+        )
         payload = await request_json(
             self._client,
             "POST",
@@ -59,7 +64,7 @@ class OpenAIProvider(AIProvider):
                 "model": self._model,
                 "messages": [
                     {"role": "system", "content": request.instructions},
-                    {"role": "user", "content": f"Known facts (JSON):\n{facts}"},
+                    {"role": "user", "content": user_content},
                 ],
                 "max_tokens": request.max_tokens,
                 "response_format": {"type": "json_object"},

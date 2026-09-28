@@ -553,14 +553,29 @@ export async function exportLeadsCsv(
   workspaceId: string,
   batchId?: string
 ): Promise<Blob> {
-  const { data } = await api.get<Blob>("/leads/export", {
+  const response = await api.get<Blob>("/leads/export", {
     params: {
       workspace_id: workspaceId,
       ...(batchId ? { batch_id: batchId } : {}),
     },
     responseType: "blob",
   });
-  return data;
+
+  const contentType = String(response.headers["content-type"] ?? "");
+  // Axios still resolves when the body is an error JSON served as a blob.
+  if (contentType.includes("application/json")) {
+    const text = await response.data.text();
+    let detail = "Export failed";
+    try {
+      const parsed = JSON.parse(text) as { detail?: string };
+      if (parsed.detail) detail = parsed.detail;
+    } catch {
+      /* keep default */
+    }
+    throw new Error(detail);
+  }
+
+  return new Blob([response.data], { type: "text/csv;charset=utf-8" });
 }
 
 export async function getLead(workspaceId: string, contactId: string): Promise<Contact> {

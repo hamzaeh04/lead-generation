@@ -1,6 +1,10 @@
 """CSV lead export. Suppression filtering is added once the suppression
 system exists (Phase 11) — until then this exports all workspace contacts
-(or contacts in a single search batch when batch_id is provided)."""
+(or contacts in a single search batch when batch_id is provided).
+
+Columns match the import template so an exported file can be re-imported
+with auto-detected column mapping.
+"""
 from __future__ import annotations
 
 import csv
@@ -12,18 +16,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.contact_repository import ContactRepository
 from app.repositories.search_batch_repository import SearchBatchRepository
 
+#: Headers align with csv_import_service synonyms + the downloadable template.
 _EXPORT_COLUMNS = (
-    "company",
-    "contact_name",
-    "job_title",
-    "email",
-    "phone",
-    "website",
-    "city",
-    "state",
-    "country",
-    "industry",
-    "created_at",
+    "Company Name",
+    "Website",
+    "Email",
+    "First Name",
+    "Last Name",
+    "Job Title",
+    "Phone",
+    "City",
+    "State",
+    "Country",
+    "Industry",
+    "LinkedIn",
+    "Status",
+    "Created At",
 )
 
 
@@ -45,24 +53,31 @@ class CsvExportService:
             contacts = await self.contacts.list_for_workspace(workspace_id, limit=100_000, offset=0)
 
         buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=_EXPORT_COLUMNS)
+        # Excel opens UTF-8 CSVs correctly when a BOM is present.
+        buffer.write("\ufeff")
+        writer = csv.DictWriter(buffer, fieldnames=_EXPORT_COLUMNS, extrasaction="ignore")
         writer.writeheader()
 
         for contact in contacts:
             company = contact.company
             writer.writerow(
                 {
-                    "company": company.name if company else "",
-                    "contact_name": contact.full_name or "",
-                    "job_title": contact.job_title or "",
-                    "email": contact.email or "",
-                    "phone": contact.phone or "",
-                    "website": company.website if company else "",
-                    "city": company.city if company else "",
-                    "state": company.state if company else "",
-                    "country": company.country if company else "",
-                    "industry": company.industry if company else "",
-                    "created_at": contact.created_at.isoformat(),
+                    "Company Name": (company.name if company else "") or "",
+                    "Website": (company.website if company else "") or "",
+                    "Email": contact.email or "",
+                    "First Name": contact.first_name or "",
+                    "Last Name": contact.last_name or "",
+                    "Job Title": contact.job_title or "",
+                    "Phone": contact.phone or "",
+                    "City": contact.city or (company.city if company else "") or "",
+                    "State": contact.state or (company.state if company else "") or "",
+                    "Country": contact.country or (company.country if company else "") or "",
+                    "Industry": contact.industry
+                    or (company.industry if company else "")
+                    or "",
+                    "LinkedIn": contact.linkedin_url or "",
+                    "Status": contact.status.value if contact.status else "",
+                    "Created At": contact.created_at.isoformat() if contact.created_at else "",
                 }
             )
 

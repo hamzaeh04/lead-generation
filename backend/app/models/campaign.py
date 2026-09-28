@@ -34,6 +34,11 @@ class Campaign(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reply_to: Mapped[str | None] = mapped_column(String(320), nullable=True)
     daily_limit: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
     timezone: Mapped[str] = mapped_column(String(100), default="UTC", nullable=False)
+    #: Minutes between consecutive first-touch sends (5/10/15/30/45/60). Null = blast.
+    send_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Local HH:MM window start/end in `timezone` (inclusive start, exclusive end).
+    send_window_start: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    send_window_end: Mapped[str | None] = mapped_column(String(5), nullable=True)
 
     steps: Mapped[list["CampaignStep"]] = relationship(
         back_populates="campaign", cascade="all, delete-orphan", order_by="CampaignStep.step_number"

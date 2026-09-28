@@ -1,8 +1,10 @@
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.campaign import CampaignStatus
+
+_ALLOWED_SEND_INTERVALS = {5, 10, 15, 30, 45, 60}
 
 
 class CampaignStepCreate(BaseModel):
@@ -39,6 +41,18 @@ class CampaignCreate(BaseModel):
     reply_to: str | None = None
     daily_limit: int = Field(default=50, ge=1)
     timezone: str = "UTC"
+    send_interval_minutes: int | None = Field(default=None, ge=5, le=60)
+    send_window_start: str | None = Field(default=None, max_length=5)
+    send_window_end: str | None = Field(default=None, max_length=5)
+
+    @field_validator("send_interval_minutes")
+    @classmethod
+    def validate_interval(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v not in _ALLOWED_SEND_INTERVALS:
+            raise ValueError("send_interval_minutes must be one of 5, 10, 15, 30, 45, 60")
+        return v
 
 
 class CampaignRead(BaseModel):
@@ -52,6 +66,9 @@ class CampaignRead(BaseModel):
     reply_to: str | None
     daily_limit: int
     timezone: str
+    send_interval_minutes: int | None = None
+    send_window_start: str | None = None
+    send_window_end: str | None = None
     steps: list[CampaignStepRead] = []
 
 
@@ -61,6 +78,9 @@ class EnrollRequest(BaseModel):
     email_setup_id: uuid.UUID | None = None
     subject: str | None = Field(default=None, min_length=1, max_length=500)
     body: str | None = Field(default=None, min_length=1)
+    #: When true (or when the campaign already has an interval), stagger sends
+    #: instead of blasting every recipient immediately.
+    paced: bool = False
 
 
 class EnrollResponse(BaseModel):

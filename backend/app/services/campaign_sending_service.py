@@ -35,6 +35,8 @@ from app.repositories.email_setup_repository import EmailSetupRepository
 from app.repositories.intent_signal_repository import IntentSignalRepository
 from app.repositories.provider_config_repository import ProviderConfigRepository
 from app.services import provider_factory
+from app.services.campaign_schedule import is_within_window, next_window_open
+from app.services.personalization_service import PersonalizationService
 from app.services.provider_usage_tracker import ProviderUsageRecorder
 from app.services.suppression_service import SuppressionService
 from app.services.template_service import build_context, ensure_lead_personalization, render_template
@@ -88,8 +90,35 @@ class CampaignSendingService:
             return summary
 
         now = datetime.now(timezone.utc)
+
+        # Outside the daily send window: push due recipients to the next open
+        # slot and skip sending this cycle.
+        if campaign.send_window_start and campaign.send_window_end:
+            if not is_within_window(
+                now,
+                tz_name=campaign.timezone or "UTC",
+                start=campaign.send_window_start,
+                end=campaign.send_window_end,
+            ):
+                resume_at = next_window_open(
+                    now,
+                    tz_name=campaign.timezone or "UTC",
+                    start=campaign.send_window_start,
+                    end=campaign.send_window_end,
+                )
+                due_outside = await self.recipients.list_due(campaign_id, now=now, limit=500)
+                for recipient in due_outside:
+                    if recipient.next_send_at < resume_at:
+                        recipient.next_send_at = resume_at
+                await self.session.commit()
+                return summary
+
+        # Paced campaigns send one lead per run (Celery / process tick).
+        if campaign.send_interval_minutes and not immediate:
+            batch_size = 1
+
         if immediate:
-            # Enroll-and-send: deliver every due recipient now, ignore daily_limit.
+            # Enroll-and-send blast: deliver every due recipient now, ignore daily_limit.
             remaining_quota = batch_size
         else:
             day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -202,6 +231,27 @@ class CampaignSendingService:
 
         generations = await self.generations.list_for_contact(campaign.workspace_id, contact.id)
         latest_personalization = generations[0] if generations else None
+
+        # Generate a per-lead draft just-in-time when the send slot arrives
+        # (Start Campaign paced flow). Fail this recipient rather than
+        # sending a blank {{personalized_*}} template.
+        uses_ai_template = "{{personalized_subject}}" in (step.subject or "") or "{{personalized_body}}" in (
+            step.body or ""
+        )
+        if uses_ai_template and latest_personalization is None:
+            try:
+                latest_personalization = await PersonalizationService(
+                    self.session, self.settings
+                ).personalize(workspace_id=campaign.workspace_id, contact_id=contact.id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "campaign_send_personalize_failed",
+                    contact_id=str(contact.id),
+                    error=str(exc),
+                )
+                recipient.status = RecipientStatus.FAILED
+                summary["failed"] += 1
+                return
 
         unsubscribe_token = create_unsubscribe_token(workspace_id=campaign.workspace_id, contact_id=contact.id)
         unsubscribe_url = f"/unsubscribe/{unsubscribe_token}"

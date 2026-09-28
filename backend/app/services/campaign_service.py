@@ -14,7 +14,10 @@ from app.repositories.campaign_repository import CampaignRepository
 from app.repositories.contact_repository import ContactRepository
 from app.repositories.email_setup_repository import EmailSetupRepository
 from app.repositories.search_batch_repository import SearchBatchRepository
+from app.services.campaign_schedule import build_staggered_slots
 from app.services.campaign_sending_service import CampaignSendingService
+
+_ALLOWED_INTERVALS = {5, 10, 15, 30, 45, 60}
 
 
 class CampaignService:
@@ -37,6 +40,7 @@ class CampaignService:
         email_setup_id: uuid.UUID | None = None,
         subject: str | None = None,
         body: str | None = None,
+        paced: bool = False,
     ) -> dict:
         campaign = await self.campaigns.get_by_id(workspace_id, campaign_id)
         if campaign is None:
@@ -95,35 +99,66 @@ class CampaignService:
                 "Provide at least one contact_id or batch_id to enroll",
             )
 
-        enrolled = already_enrolled = not_found = 0
-        now = datetime.now(timezone.utc)
-        newly_enrolled_contacts: list = []
-
+        # Only enroll contacts that have an email address.
+        eligible: list = []
+        not_found = 0
         for contact_id in unique_ids:
             contact = await self.contacts.get_by_id(workspace_id, contact_id)
             if contact is None:
                 not_found += 1
                 continue
-            existing = await self.recipients.find(campaign_id, contact_id)
+            if not (contact.email or "").strip():
+                continue
+            eligible.append(contact)
+
+        use_paced = paced or bool(campaign.send_interval_minutes)
+        interval = campaign.send_interval_minutes
+        if use_paced:
+            if interval not in _ALLOWED_INTERVALS:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Campaign send_interval_minutes must be one of 5, 10, 15, 30, 45, 60 for paced sends.",
+                )
+            if not campaign.send_window_start or not campaign.send_window_end:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Campaign send_window_start and send_window_end (HH:MM) are required for paced sends.",
+                )
+
+        now = datetime.now(timezone.utc)
+        slots: list[datetime] = []
+        if use_paced and interval:
+            slots = build_staggered_slots(
+                len(eligible),
+                now_utc=now,
+                tz_name=campaign.timezone or "UTC",
+                start=campaign.send_window_start,
+                end=campaign.send_window_end,
+                interval_minutes=interval,
+            )
+
+        enrolled = already_enrolled = 0
+        newly_enrolled_contacts: list = []
+        slot_index = 0
+
+        for contact in eligible:
+            existing = await self.recipients.find(campaign_id, contact.id)
             if existing is not None:
                 already_enrolled += 1
                 continue
+            next_at = slots[slot_index] if use_paced and slots else now
+            if use_paced and slots:
+                slot_index += 1
             self.recipients.create(
                 workspace_id=workspace_id,
                 campaign_id=campaign_id,
-                contact_id=contact_id,
-                next_send_at=now,
+                contact_id=contact.id,
+                next_send_at=next_at,
             )
             newly_enrolled_contacts.append(contact)
             enrolled += 1
 
         await self.session.commit()
-        # contact.campaign_recipients was eager-loaded above (empty, since
-        # the just-created recipient row didn't exist yet) and
-        # expire_on_commit=False means it won't auto-refresh on its own —
-        # expire it so the next read (e.g. email_track_status) sees the
-        # new recipient instead of a stale empty collection. Same pattern
-        # as the "steps" expire in delete_step, for the same reason.
         for contact in newly_enrolled_contacts:
             self.session.expire(contact, ["campaign_recipients"])
 
@@ -136,20 +171,28 @@ class CampaignService:
             "suppressed": 0,
         }
 
-        # When an Email Setup is provided, start (if needed) and send immediately
-        # from that SMTP account using the sequence subject/body.
         if email_setup_id is not None and self.settings is not None:
             if campaign.status in (CampaignStatus.DRAFT, CampaignStatus.SCHEDULED, CampaignStatus.PAUSED):
                 campaign.status = CampaignStatus.RUNNING
                 await self.session.commit()
 
-            send_summary = await CampaignSendingService(self.session, self.settings).process_campaign(
-                workspace_id=workspace_id,
-                campaign_id=campaign_id,
-                email_setup_id=email_setup_id,
-                batch_size=max(len(unique_ids), 50),
-                immediate=True,
-            )
+            if use_paced:
+                # Process at most one due send now; Celery continues the queue.
+                send_summary = await CampaignSendingService(self.session, self.settings).process_campaign(
+                    workspace_id=workspace_id,
+                    campaign_id=campaign_id,
+                    email_setup_id=email_setup_id,
+                    batch_size=1,
+                    immediate=False,
+                )
+            else:
+                send_summary = await CampaignSendingService(self.session, self.settings).process_campaign(
+                    workspace_id=workspace_id,
+                    campaign_id=campaign_id,
+                    email_setup_id=email_setup_id,
+                    batch_size=max(len(unique_ids), 50),
+                    immediate=True,
+                )
             result["sent"] = send_summary.get("sent", 0)
             result["failed"] = send_summary.get("failed", 0)
             result["suppressed"] = send_summary.get("suppressed", 0)

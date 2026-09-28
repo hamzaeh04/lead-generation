@@ -49,7 +49,6 @@ function CreateCampaignDialog({ onCreated }: { onCreated: (id: string) => void }
   const [name, setName] = useState("");
   const [fromName, setFromName] = useState("");
   const [emailSetupId, setEmailSetupId] = useState("");
-  const [dailyLimit, setDailyLimit] = useState(50);
 
   const setupsQuery = useQuery({
     queryKey: ["email-setups"],
@@ -72,7 +71,6 @@ function CreateCampaignDialog({ onCreated }: { onCreated: (id: string) => void }
         name,
         from_name: fromName || selectedSetup?.name || undefined,
         from_email: selectedSetup!.smtp_email,
-        daily_limit: dailyLimit,
       }),
     onSuccess: (campaign) => {
       queryClient.invalidateQueries({ queryKey: ["campaigns", activeWorkspace?.id] });
@@ -80,7 +78,6 @@ function CreateCampaignDialog({ onCreated }: { onCreated: (id: string) => void }
       setName("");
       setFromName("");
       setEmailSetupId("");
-      setDailyLimit(50);
       onCreated(campaign.id);
     },
     onError: (error) => toast.error(getErrorMessage(error, "Could not create campaign.")),
@@ -199,19 +196,6 @@ function CreateCampaignDialog({ onCreated }: { onCreated: (id: string) => void }
               placeholder={selectedSetup?.name || "Your name"}
             />
           </Field>
-          <Field
-            label="Daily send limit"
-            hint="Max emails sent per day, so you don't blast everyone at once and get flagged as spam."
-            htmlFor="daily_limit"
-          >
-            <Input
-              id="daily_limit"
-              type="number"
-              min={1}
-              value={dailyLimit}
-              onChange={(e) => setDailyLimit(Number(e.target.value))}
-            />
-          </Field>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel
@@ -264,7 +248,6 @@ function CampaignsContent() {
                   <span>
                     {campaign.steps.length} step{campaign.steps.length === 1 ? "" : "s"}
                   </span>
-                  <span>{campaign.daily_limit}/day limit</span>
                 </div>
               </Card>
             </Link>

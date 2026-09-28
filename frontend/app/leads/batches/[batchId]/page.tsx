@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { StartCampaignDialog } from "@/components/campaigns/StartCampaignDialog";
 import { bulkTargetStatuses, leadColumns } from "@/components/leads/lead-table-columns";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { Button } from "@/components/ui/Button";
@@ -181,7 +182,7 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
             {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
           <span
             className="flex items-center gap-1.5 text-xs text-fgMuted"
             title="AI-scored leads out of total leads in this batch"
@@ -193,8 +194,16 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
             className="rounded-md border border-border bg-surface2 px-2 py-1 text-xs capitalize text-fgMuted"
             title="Auto draft + send pipeline for this batch"
           >
-            Outreach: {batch.outreach_status.replace(/_/g, " ")}
+            Outreach: {(batch.outreach_status ?? "idle").replace(/_/g, " ")}
           </span>
+          <StartCampaignDialog
+            workspaceId={workspaceId!}
+            batchId={batchId}
+            batchSequence={batch.sequence}
+            onStarted={() =>
+              queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] })
+            }
+          />
           <Button
             size="sm"
             variant="ghost"

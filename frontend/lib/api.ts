@@ -844,6 +844,9 @@ export interface Campaign {
   reply_to: string | null;
   daily_limit: number;
   timezone: string;
+  send_interval_minutes?: number | null;
+  send_window_start?: string | null;
+  send_window_end?: string | null;
   steps: CampaignStep[];
 }
 
@@ -868,6 +871,9 @@ export async function createCampaign(
     reply_to?: string;
     daily_limit?: number;
     timezone?: string;
+    send_interval_minutes?: number | null;
+    send_window_start?: string | null;
+    send_window_end?: string | null;
   }
 ): Promise<Campaign> {
   const { data } = await api.post<Campaign>("/campaigns", payload, {
@@ -936,7 +942,7 @@ export async function enrollBatches(
   campaignId: string,
   batchIds: string[],
   emailSetupId: string,
-  content: { subject: string; body: string }
+  content: { subject: string; body: string; paced?: boolean }
 ): Promise<EnrollResponse> {
   const { data } = await api.post<EnrollResponse>(
     `/campaigns/${campaignId}/enroll`,
@@ -945,6 +951,7 @@ export async function enrollBatches(
       email_setup_id: emailSetupId,
       subject: content.subject,
       body: content.body,
+      paced: content.paced ?? false,
     },
     { params: { workspace_id: workspaceId } }
   );

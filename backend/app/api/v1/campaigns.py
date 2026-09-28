@@ -58,6 +58,9 @@ async def create_campaign(
         reply_to=campaign.reply_to,
         daily_limit=campaign.daily_limit,
         timezone=campaign.timezone,
+        send_interval_minutes=campaign.send_interval_minutes,
+        send_window_start=campaign.send_window_start,
+        send_window_end=campaign.send_window_end,
         steps=[],
     )
 
@@ -185,6 +188,7 @@ async def enroll_contacts(
         email_setup_id=payload.email_setup_id,
         subject=payload.subject,
         body=payload.body,
+        paced=payload.paced,
     )
 
 

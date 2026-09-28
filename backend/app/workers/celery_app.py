@@ -24,6 +24,6 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "process-due-campaign-sends": {
         "task": "app.tasks.process_due_campaign_sends",
-        "schedule": 300.0,  # every 5 minutes
+        "schedule": 60.0,  # every minute — supports 5-minute paced campaigns
     },
 }

@@ -168,7 +168,10 @@ class AnalyticsService:
         result = await self.session.execute(
             select(CompanySource.provider, func.count(func.distinct(CompanySource.company_id)))
             .join(Company, Company.id == CompanySource.company_id)
-            .where(Company.workspace_id == workspace_id)
+            .where(
+                Company.workspace_id == workspace_id,
+                CompanySource.provider != "serpapi",
+            )
             .group_by(CompanySource.provider)
             .order_by(func.count(func.distinct(CompanySource.company_id)).desc())
             .limit(limit)

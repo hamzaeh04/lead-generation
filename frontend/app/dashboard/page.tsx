@@ -111,6 +111,9 @@ function DashboardContent() {
       ]
     : [];
   const funnelFirst = funnelSteps[0]?.count ?? 0;
+  const topSources = (overview?.top_sources ?? []).filter(
+    (s) => s.provider.toLowerCase() !== "serpapi"
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -249,11 +252,11 @@ function DashboardContent() {
 
             <Card className="flex flex-col gap-3 lg:col-span-2">
               <h2 className="text-base font-semibold text-fg">Top sources</h2>
-              {overview.top_sources.length > 0 ? (
+              {topSources.length > 0 ? (
                 <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
                   <div className="w-full max-w-[180px] shrink-0">
                     <DonutChart
-                      data={overview.top_sources.map((s) => ({ provider: s.provider, count: s.count }))}
+                      data={topSources.map((s) => ({ provider: s.provider, count: s.count }))}
                       dataKey="count"
                       nameKey="provider"
                       height={180}
@@ -261,7 +264,7 @@ function DashboardContent() {
                   </div>
                   <div className="w-full min-w-0 flex-1">
                     <DonutLegend
-                      data={overview.top_sources.map((s) => ({ provider: s.provider, count: s.count }))}
+                      data={topSources.map((s) => ({ provider: s.provider, count: s.count }))}
                       dataKey="count"
                       nameKey="provider"
                     />

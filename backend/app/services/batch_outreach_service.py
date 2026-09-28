@@ -1,7 +1,10 @@
-"""Pre-generate AI drafts for a search batch after Discover.
+"""Pre-generate AI drafts for a search batch after Discover / CSV import.
 
 Sending is owned by Start Campaign (paced enroll). This job only drafts
-so the first send slots are faster. Skips when the batch has no emails.
+so drafts are ready before send. Skips when the batch has no emails.
+
+Drafts run independently of scoring — they must not wait for every lead
+to finish qualification (that can take many minutes on a full batch).
 """
 from __future__ import annotations
 
@@ -98,6 +101,35 @@ class BatchOutreachService:
         return setups[0]
 
 
+async def draft_batch_in_background(
+    *,
+    workspace_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    settings: Settings,
+) -> None:
+    """Pre-generate AI email drafts for every emailed lead in the batch.
+
+    Scheduled as soon as a batch is created (Discover search or CSV import)
+    so drafts do not wait on the slow score-all loop.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            summary = await BatchOutreachService(session, settings).run(
+                workspace_id=workspace_id, batch_id=batch_id
+            )
+            logger.info("background_batch_outreach_finished", **{k: v for k, v in summary.items()})
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "background_batch_outreach_failed",
+                batch_id=str(batch_id),
+                error=str(exc),
+            )
+            batch = await SearchBatchRepository(session).get_by_id(workspace_id, batch_id)
+            if batch is not None:
+                batch.outreach_status = "failed"
+                await session.commit()
+
+
 async def qualify_then_outreach_in_background(
     *,
     workspace_id: uuid.UUID,
@@ -105,7 +137,11 @@ async def qualify_then_outreach_in_background(
     batch_id: uuid.UUID | None,
     settings: Settings,
 ) -> None:
-    """Qualify leads, then (when a batch id is known) pre-generate drafts."""
+    """Qualify leads, then (when a batch id is known) pre-generate drafts.
+
+    Prefer scheduling `draft_batch_in_background` separately so drafts start
+    immediately; this combined path remains for callers that still use it.
+    """
     from app.services.lead_qualification_service import LeadQualificationService
 
     async with AsyncSessionLocal() as session:
@@ -128,19 +164,6 @@ async def qualify_then_outreach_in_background(
     if batch_id is None:
         return
 
-    async with AsyncSessionLocal() as session:
-        try:
-            summary = await BatchOutreachService(session, settings).run(
-                workspace_id=workspace_id, batch_id=batch_id
-            )
-            logger.info("background_batch_outreach_finished", **{k: v for k, v in summary.items()})
-        except Exception as exc:  # noqa: BLE001
-            logger.exception(
-                "background_batch_outreach_failed",
-                batch_id=str(batch_id),
-                error=str(exc),
-            )
-            batch = await SearchBatchRepository(session).get_by_id(workspace_id, batch_id)
-            if batch is not None:
-                batch.outreach_status = "failed"
-                await session.commit()
+    await draft_batch_in_background(
+        workspace_id=workspace_id, batch_id=batch_id, settings=settings
+    )

@@ -90,6 +90,13 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
     queryKey: ["lead-personalizations", workspaceId, contactId],
     queryFn: () => listLeadPersonalizations(workspaceId!, contactId),
     enabled: !!workspaceId,
+    // Auto-draft runs in the background after batch create — poll briefly
+    // until a draft lands so the user doesn't need a manual refresh.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data && data.length > 0) return false;
+      return 4000;
+    },
   });
 
   const statusMutation = useMutation({
@@ -294,14 +301,17 @@ function LeadDetailContent({ contactId }: { contactId: string }) {
                 AI personalization
               </h2>
               <p className="text-sm text-fgMuted">
-                Generates a grounded outreach draft from this contact&apos;s real data — never a fabricated fact.
+                Drafts are generated automatically when a batch is created. Use this button to
+                regenerate from this contact&apos;s latest data.
               </p>
               <Button
                 onClick={() => personalizeMutation.mutate()}
                 loading={personalizeMutation.isPending}
                 className="self-start"
               >
-                Generate draft
+                {personalizationsQuery.data && personalizationsQuery.data.length > 0
+                  ? "Regenerate draft"
+                  : "Generate draft"}
               </Button>
               {personalizationsQuery.data && personalizationsQuery.data.length > 0 && (
                 <div className="flex flex-col gap-3 border-t border-border pt-3">

@@ -14,9 +14,9 @@ from app.schemas.search import (
     SearchExecuteRequest,
     SearchExecuteResponse,
 )
+from app.services.batch_outreach_service import draft_batch_in_background
 from app.services.prospect_prompt_service import ProspectPromptService
-from app.services.search_service import SearchService
-from app.services.batch_outreach_service import qualify_then_outreach_in_background
+from app.services.search_service import SearchService, qualify_contacts_in_background
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -91,15 +91,25 @@ async def execute_search(
         created_by=current_user.id,
     )
 
-    # Qualification + auto draft/send run after the response is sent so a
-    # large batch never risks the HTTP request timing out.
+    # Score + draft run after the response is sent so a large batch never
+    # risks the HTTP request timing out. Drafts are scheduled separately
+    # from scoring so they start immediately — they used to wait until
+    # every lead finished qualify (often many minutes), which made it look
+    # like drafts only existed after clicking "Generate draft".
     contact_ids = [contact.id for contact in result["contacts"]]
+    batch_id = result.get("batch_id")
     if contact_ids:
         background_tasks.add_task(
-            qualify_then_outreach_in_background,
+            qualify_contacts_in_background,
             workspace_id=payload.workspace_id,
             contact_ids=contact_ids,
-            batch_id=result.get("batch_id"),
+            settings=settings,
+        )
+    if batch_id is not None:
+        background_tasks.add_task(
+            draft_batch_in_background,
+            workspace_id=payload.workspace_id,
+            batch_id=batch_id,
             settings=settings,
         )
 

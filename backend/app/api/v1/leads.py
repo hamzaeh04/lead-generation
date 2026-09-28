@@ -1,7 +1,7 @@
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,7 @@ from app.schemas.csv_import import ImportMapping, ImportPreviewResponse, ImportR
 from app.schemas.lead_qualification import LeadQualificationRead
 from app.schemas.note import NoteCreate, NoteRead
 from app.schemas.task import TaskCreate, TaskRead, TaskUpdate
+from app.services.batch_outreach_service import draft_batch_in_background
 from app.services.csv_export_service import CsvExportService
 from app.services.csv_import_service import CsvImportService, preview_csv
 from app.services.lead_qualification_service import LeadQualificationService
@@ -155,11 +156,13 @@ async def preview_lead_import(
 @router.post("/import", response_model=ImportResultResponse)
 async def import_leads(
     workspace_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     mapping_json: str = Form(...),
     batch_id: uuid.UUID | None = Query(default=None),
     _membership=Depends(require_workspace_member),
     session: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ):
     content = await file.read()
     try:
@@ -170,7 +173,7 @@ async def import_leads(
         ) from exc
 
     try:
-        return await CsvImportService(session).execute(
+        result = await CsvImportService(session).execute(
             workspace_id=workspace_id, content=content, mapping=mapping, batch_id=batch_id
         )
     except ValueError as exc:
@@ -180,6 +183,18 @@ async def import_leads(
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+    # Same auto-draft path as Discover — imported emails get drafts without
+    # waiting for a manual "Generate draft" click.
+    if batch_id is not None and (result.contacts_created + result.contacts_matched) > 0:
+        background_tasks.add_task(
+            draft_batch_in_background,
+            workspace_id=workspace_id,
+            batch_id=batch_id,
+            settings=settings,
+        )
+
+    return result
 
 
 @router.get("/{contact_id}", response_model=ContactRead)

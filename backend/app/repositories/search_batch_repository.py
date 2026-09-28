@@ -34,14 +34,19 @@ class SearchBatchRepository:
         description: str | None = None,
     ) -> SearchBatch:
         sequence = await self.next_sequence(workspace_id)
+        snapshot = dict(criteria_snapshot or {})
+        # Keep optional display name inside criteria_snapshot — same columns
+        # Discover batches already use (no schema change required on Neon).
+        if name and name.strip():
+            snapshot["name"] = name.strip()
+        if description and description.strip():
+            snapshot["description"] = description.strip()
         batch = SearchBatch(
             workspace_id=workspace_id,
             sequence=sequence,
-            name=name,
-            description=description,
             provider=provider,
             category=category,
-            criteria_snapshot=criteria_snapshot,
+            criteria_snapshot=snapshot,
             created_by=created_by,
         )
         self.session.add(batch)

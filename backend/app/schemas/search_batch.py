@@ -2,17 +2,16 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.providers.base import ProviderCategory
 from app.schemas.contact import ContactRead
 
 
 class SearchBatchCreate(BaseModel):
-    """Manual empty batch — filled later via CSV import or Get leads."""
+    """Manual empty batch — same SearchBatch row shape as Discover creates."""
 
     name: str = Field(min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=2000)
 
 
 class SearchBatchRead(BaseModel):
@@ -20,8 +19,6 @@ class SearchBatchRead(BaseModel):
 
     id: uuid.UUID
     sequence: int
-    name: str | None = None
-    description: str | None = None
     provider: str
     category: ProviderCategory
     criteria_snapshot: dict[str, Any]
@@ -33,6 +30,22 @@ class SearchBatchRead(BaseModel):
     outreach_campaign_id: uuid.UUID | None = None
     outreach_status: str = "idle"
     created_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def name(self) -> str | None:
+        raw = (self.criteria_snapshot or {}).get("name")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str | None:
+        raw = (self.criteria_snapshot or {}).get("description")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return None
 
 
 class SearchBatchDetail(SearchBatchRead):

@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/Dialog";
 import { Field } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
-import { Textarea } from "@/components/ui/Textarea";
 import { createSearchBatch } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -26,23 +25,16 @@ export function CreateBatchDialog({ onCreated }: { onCreated?: (batchId: string)
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-
-  function reset() {
-    setName("");
-    setDescription("");
-  }
 
   const mutation = useMutation({
     mutationFn: () =>
       createSearchBatch(activeWorkspace!.id, {
         name: name.trim(),
-        description: description.trim() || undefined,
       }),
     onSuccess: (batch) => {
       toast.success(`Batch “${batch.name || `Batch ${String(batch.sequence).padStart(2, "0")}`}” created`);
       setOpen(false);
-      reset();
+      setName("");
       onCreated?.(batch.id);
       router.push(`/leads/batches/${batch.id}`);
     },
@@ -59,15 +51,15 @@ export function CreateBatchDialog({ onCreated }: { onCreated?: (batchId: string)
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) reset();
+          if (!next) setName("");
         }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create batch</DialogTitle>
             <DialogDescription>
-              Name this batch and add optional notes. You can import CSV leads or start a campaign
-              from the batch page afterward.
+              Name this batch. You can import CSV leads or start a campaign from the batch page
+              afterward.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -94,20 +86,6 @@ export function CreateBatchDialog({ onCreated }: { onCreated?: (batchId: string)
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Q1 dental clinics TX"
                 maxLength={255}
-              />
-            </Field>
-            <Field
-              label="Description"
-              htmlFor="batch_desc"
-              hint="Optional — ICP notes, geography, or campaign context."
-            >
-              <Textarea
-                id="batch_desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="e.g. Owners and GMs at clinics with 10–50 staff in Texas"
-                rows={3}
-                maxLength={2000}
               />
             </Field>
             <DialogFooter>

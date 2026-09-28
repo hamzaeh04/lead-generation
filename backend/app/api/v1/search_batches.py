@@ -49,10 +49,9 @@ async def create_search_batch(
         workspace_id=workspace_id,
         provider="manual",
         category=ProviderCategory.PERSON_DISCOVERY,
-        criteria_snapshot={"source": "manual_create", "name": payload.name.strip()},
+        criteria_snapshot={"source": "manual_create"},
         created_by=current_user.id,
         name=payload.name.strip(),
-        description=(payload.description or "").strip() or None,
     )
     await session.commit()
     await session.refresh(batch)

@@ -898,7 +898,7 @@ export async function listSearchBatches(
 
 export async function createSearchBatch(
   workspaceId: string,
-  payload: { name: string; description?: string }
+  payload: { name: string }
 ): Promise<SearchBatch> {
   const { data } = await api.post<SearchBatch>("/search-batches", payload, {
     params: { workspace_id: workspaceId },

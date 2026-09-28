@@ -483,6 +483,86 @@ export async function listLeads(
   return data;
 }
 
+export const IMPORTABLE_LEAD_FIELDS = [
+  "company",
+  "website",
+  "email",
+  "first_name",
+  "last_name",
+  "job_title",
+  "phone",
+  "city",
+  "state",
+  "country",
+  "industry",
+] as const;
+
+export interface ImportPreviewRow {
+  row_number: number;
+  values: Record<string, string>;
+}
+
+export interface ImportPreviewResponse {
+  headers: string[];
+  suggested_mapping: Record<string, string>;
+  sample_rows: ImportPreviewRow[];
+  total_rows: number;
+}
+
+export interface ImportResultResponse {
+  total_rows: number;
+  companies_created: number;
+  companies_matched: number;
+  contacts_created: number;
+  contacts_matched: number;
+  skipped_invalid: number;
+  errors: { row_number: number; reason: string }[];
+}
+
+export async function previewLeadsCsv(
+  workspaceId: string,
+  file: File
+): Promise<ImportPreviewResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<ImportPreviewResponse>("/leads/import/preview", form, {
+    params: { workspace_id: workspaceId },
+  });
+  return data;
+}
+
+export async function importLeadsCsv(
+  workspaceId: string,
+  file: File,
+  mapping: Record<string, string>,
+  batchId?: string
+): Promise<ImportResultResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("mapping_json", JSON.stringify(mapping));
+  const { data } = await api.post<ImportResultResponse>("/leads/import", form, {
+    params: {
+      workspace_id: workspaceId,
+      ...(batchId ? { batch_id: batchId } : {}),
+    },
+  });
+  return data;
+}
+
+export async function exportLeadsCsv(
+  workspaceId: string,
+  batchId?: string
+): Promise<Blob> {
+  const { data } = await api.get<Blob>("/leads/export", {
+    params: {
+      workspace_id: workspaceId,
+      ...(batchId ? { batch_id: batchId } : {}),
+    },
+    responseType: "blob",
+  });
+  return data;
+}
+
 export async function getLead(workspaceId: string, contactId: string): Promise<Contact> {
   const { data } = await api.get<Contact>(`/leads/${contactId}`, {
     params: { workspace_id: workspaceId },

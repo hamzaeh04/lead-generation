@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.providers.base import NormalizedCompany, NormalizedContact, ProviderMetadata
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.contact_repository import ContactRepository
+from app.repositories.search_batch_repository import SearchBatchRepository
 from app.schemas.csv_import import (
     IMPORTABLE_FIELDS,
     ImportMapping,
@@ -101,13 +102,27 @@ class CsvImportService:
         self.session = session
         self.company_resolver = CompanyEntityResolver(CompanyRepository(session))
         self.contact_resolver = PersonEntityResolver(ContactRepository(session))
+        self.search_batches = SearchBatchRepository(session)
 
     async def execute(
-        self, *, workspace_id: uuid.UUID, content: bytes, mapping: ImportMapping
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        content: bytes,
+        mapping: ImportMapping,
+        batch_id: uuid.UUID | None = None,
     ) -> ImportResultResponse:
         unknown_fields = set(mapping.mapping) - set(IMPORTABLE_FIELDS)
         if unknown_fields:
             raise ValueError(f"Unknown mapping field(s): {', '.join(sorted(unknown_fields))}")
+
+        batch = None
+        linked_contact_ids: set[uuid.UUID] = set()
+        if batch_id is not None:
+            batch = await self.search_batches.get_by_id(workspace_id, batch_id)
+            if batch is None:
+                raise ValueError("Search batch not found")
+            linked_contact_ids = set(await self.search_batches.list_contact_ids(batch_id))
 
         _, rows = _parse_rows(content)
 
@@ -115,6 +130,8 @@ class CsvImportService:
         contacts_created = contacts_matched = 0
         skipped_invalid = 0
         errors: list[ImportRowError] = []
+        batch_companies_created = batch_companies_matched = 0
+        batch_contacts_created = batch_contacts_matched = 0
 
         for row_number, row in enumerate(rows, start=1):
             values = {
@@ -160,8 +177,10 @@ class CsvImportService:
                 company_id = company_resolution.company.id
                 if company_resolution.created:
                     companies_created += 1
+                    batch_companies_created += 1
                 else:
                     companies_matched += 1
+                    batch_companies_matched += 1
 
             if has_contact_signal:
                 contact_candidate = NormalizedContact(
@@ -184,6 +203,24 @@ class CsvImportService:
                     contacts_created += 1
                 else:
                     contacts_matched += 1
+
+                if batch is not None and contact_resolution.contact.id not in linked_contact_ids:
+                    self.search_batches.add_contact(
+                        batch=batch,
+                        contact_id=contact_resolution.contact.id,
+                        is_new=contact_resolution.created,
+                    )
+                    linked_contact_ids.add(contact_resolution.contact.id)
+                    if contact_resolution.created:
+                        batch_contacts_created += 1
+                    else:
+                        batch_contacts_matched += 1
+
+        if batch is not None:
+            batch.companies_created += batch_companies_created
+            batch.companies_matched += batch_companies_matched
+            batch.contacts_created += batch_contacts_created
+            batch.contacts_matched += batch_contacts_matched
 
         await self.session.commit()
 

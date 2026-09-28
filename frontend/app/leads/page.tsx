@@ -1,10 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Search, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
-import { Button } from "@/components/ui/Button";
+import { CreateBatchDialog } from "@/components/leads/CreateBatchDialog";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CardSkeleton } from "@/components/ui/Skeleton";
@@ -91,13 +91,9 @@ function LeadsContent() {
       {!batchesQuery.isLoading && batches.length === 0 && (
         <EmptyState
           icon={Search}
-          title="No searches run yet"
-          description="Run a search on Discover to build your first batch of leads."
-          action={
-            <Link href="/discover">
-              <Button size="sm">Discover leads</Button>
-            </Link>
-          }
+          title="No batches yet"
+          description="Click Get leads to search with Apollo or Smartlead — same form as Discover."
+          action={<CreateBatchDialog />}
         />
       )}
 
@@ -113,8 +109,21 @@ function LeadsContent() {
 }
 
 export default function LeadsPage() {
+  const queryClient = useQueryClient();
+  const { activeWorkspace } = useWorkspace();
+
   return (
-    <AppShell title="Leads" description="Every search run from Discover, grouped as a batch of leads.">
+    <AppShell
+      title="Leads"
+      description="Every search run from Discover, grouped as a batch of leads."
+      actions={
+        <CreateBatchDialog
+          onCreated={() =>
+            queryClient.invalidateQueries({ queryKey: ["search-batches", activeWorkspace?.id] })
+          }
+        />
+      }
+    >
       <LeadsContent />
     </AppShell>
   );

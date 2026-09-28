@@ -121,14 +121,21 @@ async def bulk_tag_leads(
 @router.get("/export")
 async def export_leads(
     workspace_id: uuid.UUID,
+    batch_id: uuid.UUID | None = Query(default=None),
     _membership=Depends(require_workspace_member),
     session: AsyncSession = Depends(get_db_session),
 ):
-    csv_content = await CsvExportService(session).export(workspace_id=workspace_id)
+    try:
+        csv_content = await CsvExportService(session).export(
+            workspace_id=workspace_id, batch_id=batch_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    filename = f"batch_{batch_id}_leads.csv" if batch_id else "leads_export.csv"
     return StreamingResponse(
         iter([csv_content]),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=leads_export.csv"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
@@ -150,6 +157,7 @@ async def import_leads(
     workspace_id: uuid.UUID,
     file: UploadFile = File(...),
     mapping_json: str = Form(...),
+    batch_id: uuid.UUID | None = Query(default=None),
     _membership=Depends(require_workspace_member),
     session: AsyncSession = Depends(get_db_session),
 ):
@@ -163,10 +171,15 @@ async def import_leads(
 
     try:
         return await CsvImportService(session).execute(
-            workspace_id=workspace_id, content=content, mapping=mapping
+            workspace_id=workspace_id, content=content, mapping=mapping, batch_id=batch_id
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if str(exc) == "Search batch not found"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.get("/{contact_id}", response_model=ContactRead)

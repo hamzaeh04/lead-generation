@@ -2,12 +2,13 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type RowSelectionState } from "@tanstack/react-table";
-import { Gauge, Mail, Phone, Sparkles, Users2, Zap } from "lucide-react";
+import { Download, Gauge, Mail, Phone, Sparkles, Users2, Zap } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { StartCampaignDialog } from "@/components/campaigns/StartCampaignDialog";
+import { ImportLeadsCsvDialog } from "@/components/leads/ImportLeadsCsvDialog";
 import { bulkTargetStatuses, leadColumns } from "@/components/leads/lead-table-columns";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +19,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import {
   bulkUpdateLeadStatus,
   enrichPhonesBatch,
+  exportLeadsCsv,
   getSearchBatch,
   qualifyBatch,
   revealBatch,
@@ -140,6 +142,21 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
+  const exportMutation = useMutation({
+    mutationFn: () => exportLeadsCsv(workspaceId!, batchId),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const sequence = batch?.sequence ?? 0;
+      anchor.href = url;
+      anchor.download = `batch_${String(sequence).padStart(2, "0")}_leads.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success("CSV downloaded");
+    },
+    onError: (error) => toast.error(getErrorMessage(error, "Export failed")),
+  });
+
   if (batchQuery.isLoading || !batch) {
     return (
       <div className="flex flex-col gap-4">
@@ -165,7 +182,33 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Breadcrumb items={[{ label: "Leads", href: "/leads" }, { label: `Batch ${String(batch.sequence).padStart(2, "0")}` }]} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Breadcrumb
+          items={[
+            { label: "Leads", href: "/leads" },
+            { label: `Batch ${String(batch.sequence).padStart(2, "0")}` },
+          ]}
+        />
+        <div className="flex shrink-0 items-center gap-2">
+          <ImportLeadsCsvDialog
+            workspaceId={workspaceId!}
+            batchId={batchId}
+            onImported={() =>
+              queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] })
+            }
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={exportMutation.isPending}
+            onClick={() => exportMutation.mutate()}
+            title="Download this batch's leads as CSV"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </Button>
+        </div>
+      </div>
 
       <Card className="flex items-center gap-4">
         <span

@@ -3,13 +3,16 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session, require_workspace_member
+from app.api.deps import get_current_user, get_db_session, require_workspace_member
 from app.core.config import Settings, get_settings
+from app.models.user import User
+from app.providers.base import ProviderCategory
 from app.repositories.search_batch_repository import SearchBatchRepository
 from app.schemas.search_batch import (
     BatchPhoneEnrichResponse,
     BatchQualifyResponse,
     BatchRevealResponse,
+    SearchBatchCreate,
     SearchBatchDetail,
     SearchBatchRead,
 )
@@ -30,6 +33,30 @@ async def list_search_batches(
 ):
     repo = SearchBatchRepository(session)
     return await repo.list_for_workspace(workspace_id, limit=limit, offset=offset)
+
+
+@router.post("", response_model=SearchBatchRead, status_code=status.HTTP_201_CREATED)
+async def create_search_batch(
+    payload: SearchBatchCreate,
+    workspace_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    _membership=Depends(require_workspace_member),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Create an empty named batch (for CSV import / later enrichment)."""
+    repo = SearchBatchRepository(session)
+    batch = await repo.create(
+        workspace_id=workspace_id,
+        provider="manual",
+        category=ProviderCategory.PERSON_DISCOVERY,
+        criteria_snapshot={"source": "manual_create", "name": payload.name.strip()},
+        created_by=current_user.id,
+        name=payload.name.strip(),
+        description=(payload.description or "").strip() or None,
+    )
+    await session.commit()
+    await session.refresh(batch)
+    return batch
 
 
 @router.get("/{batch_id}", response_model=SearchBatchDetail)

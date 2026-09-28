@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Integer, String, Uuid
+from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -15,7 +15,8 @@ class SearchBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """One row per search run from the Discover page — groups the
     companies/contacts that run touched so leads can be reviewed by the
     batch that found them, not just as one flat list. `sequence` is a
-    per-workspace, human-facing counter ("Batch 01", "Batch 02", ...)."""
+    per-workspace, human-facing counter ("Batch 01", "Batch 02", ...).
+    Manually created batches also carry an optional `name` / `description`."""
 
     __tablename__ = "search_batches"
 
@@ -23,6 +24,9 @@ class SearchBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Optional human label (Create batch modal). Falls back to "Batch NN" in UI.
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     category: Mapped[ProviderCategory] = mapped_column(
         Enum(ProviderCategory, name="provider_category", values_callable=str_enum_values), nullable=False

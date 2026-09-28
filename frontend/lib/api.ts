@@ -867,6 +867,8 @@ export async function parseProspectPrompt(payload: {
 export interface SearchBatch {
   id: string;
   sequence: number;
+  name?: string | null;
+  description?: string | null;
   provider: string;
   category: ProviderCategory;
   criteria_snapshot: Record<string, unknown>;
@@ -890,6 +892,16 @@ export async function listSearchBatches(
 ): Promise<SearchBatch[]> {
   const { data } = await api.get<SearchBatch[]>("/search-batches", {
     params: { workspace_id: workspaceId, ...params },
+  });
+  return data;
+}
+
+export async function createSearchBatch(
+  workspaceId: string,
+  payload: { name: string; description?: string }
+): Promise<SearchBatch> {
+  const { data } = await api.post<SearchBatch>("/search-batches", payload, {
+    params: { workspace_id: workspaceId },
   });
   return data;
 }

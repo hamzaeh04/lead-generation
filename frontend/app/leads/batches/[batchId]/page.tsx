@@ -35,6 +35,7 @@ const PROVIDER_INFO: Record<string, { label: string; badgeClass: string; icon: t
     badgeClass: "bg-gradient-to-br from-violet-500 to-pink-500",
     icon: Sparkles,
   },
+  manual: { label: "Manual", badgeClass: "bg-emerald-600", icon: Users2 },
 };
 
 function BatchDetailContent({ batchId }: { batchId: string }) {
@@ -186,7 +187,11 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
         <Breadcrumb
           items={[
             { label: "Leads", href: "/leads" },
-            { label: `Batch ${String(batch.sequence).padStart(2, "0")}` },
+            {
+              label:
+                batch.name?.trim() ||
+                `Batch ${String(batch.sequence).padStart(2, "0")}`,
+            },
           ]}
         />
         <div className="flex shrink-0 items-center gap-2">
@@ -218,12 +223,18 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-semibold text-fg">
-            Batch {String(batch.sequence).padStart(2, "0")}
+            {batch.name?.trim() || `Batch ${String(batch.sequence).padStart(2, "0")}`}
           </h2>
           <p className="text-sm text-fgMuted">
+            {batch.name?.trim()
+              ? `Batch ${String(batch.sequence).padStart(2, "0")} · `
+              : ""}
             Sourced via {info.label} · {date.toLocaleDateString()}{" "}
             {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </p>
+          {batch.description?.trim() && (
+            <p className="mt-1 text-sm text-fgSubtle">{batch.description}</p>
+          )}
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
           <span

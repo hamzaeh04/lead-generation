@@ -2,10 +2,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.providers.base import ProviderCategory
 from app.schemas.contact import ContactRead
+
+
+class SearchBatchCreate(BaseModel):
+    """Manual empty batch — filled later via CSV import or Get leads."""
+
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
 
 
 class SearchBatchRead(BaseModel):
@@ -13,6 +20,8 @@ class SearchBatchRead(BaseModel):
 
     id: uuid.UUID
     sequence: int
+    name: str | None = None
+    description: str | None = None
     provider: str
     category: ProviderCategory
     criteria_snapshot: dict[str, Any]

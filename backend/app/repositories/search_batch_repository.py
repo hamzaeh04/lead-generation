@@ -30,11 +30,15 @@ class SearchBatchRepository:
         category: ProviderCategory,
         criteria_snapshot: dict[str, Any],
         created_by: uuid.UUID | None,
+        name: str | None = None,
+        description: str | None = None,
     ) -> SearchBatch:
         sequence = await self.next_sequence(workspace_id)
         batch = SearchBatch(
             workspace_id=workspace_id,
             sequence=sequence,
+            name=name,
+            description=description,
             provider=provider,
             category=category,
             criteria_snapshot=criteria_snapshot,

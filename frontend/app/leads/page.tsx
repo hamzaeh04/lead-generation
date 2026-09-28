@@ -1,10 +1,11 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Search, Sparkles, Zap } from "lucide-react";
+import { ChevronRight, FolderPlus, Search, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { CreateBatchDialog } from "@/components/leads/CreateBatchDialog";
+import { GetLeadsDialog } from "@/components/leads/GetLeadsDialog";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CardSkeleton } from "@/components/ui/Skeleton";
@@ -19,10 +20,15 @@ const PROVIDER_INFO: Record<string, { label: string; badgeClass: string; icon: t
     badgeClass: "bg-gradient-to-br from-violet-500 to-pink-500",
     icon: Sparkles,
   },
+  manual: { label: "Manual", badgeClass: "bg-emerald-600", icon: FolderPlus },
 };
 
 function formatBatchNumber(sequence: number): string {
   return `Batch ${String(sequence).padStart(2, "0")}`;
+}
+
+function batchTitle(batch: SearchBatch): string {
+  return batch.name?.trim() || formatBatchNumber(batch.sequence);
 }
 
 function BatchRow({ batch }: { batch: SearchBatch }) {
@@ -50,11 +56,14 @@ function BatchRow({ batch }: { batch: SearchBatch }) {
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0">
-          <p className="font-semibold text-fg">{formatBatchNumber(batch.sequence)}</p>
+          <p className="font-semibold text-fg">{batchTitle(batch)}</p>
           <p className="truncate text-sm text-fgMuted">
-            {info.label} · {date.toLocaleDateString()}{" "}
+            {formatBatchNumber(batch.sequence)} · {info.label} · {date.toLocaleDateString()}{" "}
             {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </p>
+          {batch.description?.trim() && (
+            <p className="mt-0.5 truncate text-xs text-fgSubtle">{batch.description}</p>
+          )}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-4">
@@ -67,7 +76,11 @@ function BatchRow({ batch }: { batch: SearchBatch }) {
   );
 }
 
-function LeadsContent() {
+function LeadsContent({
+  onRefresh,
+}: {
+  onRefresh: () => void;
+}) {
   const { activeWorkspace } = useWorkspace();
 
   const batchesQuery = useQuery({
@@ -92,8 +105,13 @@ function LeadsContent() {
         <EmptyState
           icon={Search}
           title="No batches yet"
-          description="Click Get leads to search with Apollo or Smartlead — same form as Discover."
-          action={<CreateBatchDialog />}
+          description="Create a batch to import CSV leads, or Get leads from Apollo / Smartlead."
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <CreateBatchDialog onCreated={() => onRefresh()} />
+              <GetLeadsDialog onCreated={() => onRefresh()} />
+            </div>
+          }
         />
       )}
 
@@ -112,19 +130,22 @@ export default function LeadsPage() {
   const queryClient = useQueryClient();
   const { activeWorkspace } = useWorkspace();
 
+  function refreshBatches() {
+    queryClient.invalidateQueries({ queryKey: ["search-batches", activeWorkspace?.id] });
+  }
+
   return (
     <AppShell
       title="Leads"
-      description="Every search run from Discover, grouped as a batch of leads."
+      description="Batches of leads — create one manually, import CSV, or discover via Apollo / Smartlead."
       actions={
-        <CreateBatchDialog
-          onCreated={() =>
-            queryClient.invalidateQueries({ queryKey: ["search-batches", activeWorkspace?.id] })
-          }
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <CreateBatchDialog onCreated={() => refreshBatches()} />
+          <GetLeadsDialog onCreated={() => refreshBatches()} />
+        </div>
       }
     >
-      <LeadsContent />
+      <LeadsContent onRefresh={refreshBatches} />
     </AppShell>
   );
 }

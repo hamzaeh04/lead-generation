@@ -19,6 +19,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -101,6 +102,7 @@ function ThemeToggle() {
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { currentUser, workspaces, activeWorkspace, setActiveWorkspaceId, refreshAuth } = useWorkspace();
 
   if (!currentUser) return null;
@@ -108,6 +110,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   async function handleLogout() {
     await logout();
+    // Every cached query ("me", "workspaces", leads, batches, everything)
+    // is scoped to whichever account was logged in — without clearing it,
+    // the next login (even a brand new account, in the same tab within
+    // the 30s staleTime window) can serve this account's cached
+    // "workspaces" response before a real refetch happens, landing the
+    // new account in the previous one's workspace.
+    queryClient.clear();
     refreshAuth();
     router.push("/login");
   }

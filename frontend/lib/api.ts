@@ -1340,6 +1340,9 @@ export function storeSession(auth: AuthTokens) {
 export function clearSession() {
   window.localStorage.removeItem("access_token");
   window.localStorage.removeItem("refresh_token");
+  // Never let the next account (even a brand new one, same browser tab)
+  // inherit "last selected workspace" from whoever was logged in before.
+  window.localStorage.removeItem("active_workspace_id");
 }
 
 // Revokes both tokens server-side (see backend README §16) before

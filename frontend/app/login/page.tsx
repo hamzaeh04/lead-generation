@@ -23,6 +23,13 @@ export default function LoginPage() {
   const mutation = useMutation({
     mutationFn: login,
     onSuccess: async (data) => {
+      // A previous account's session (in this same tab) can leave "me",
+      // "workspaces", leads, etc. cached — within the 30s staleTime
+      // window, fetchQuery below would otherwise serve that stale
+      // response instead of a real network call, logging this account
+      // into the previous one's workspace. Wipe it before storing the
+      // new session so every query below is forced to actually refetch.
+      queryClient.clear();
       storeSession(data);
       // WorkspaceProvider only checks localStorage for a token once, on
       // initial app mount — without this, authStatus would stay

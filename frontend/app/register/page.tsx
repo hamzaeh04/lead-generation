@@ -25,6 +25,11 @@ export default function RegisterPage() {
   const mutation = useMutation({
     mutationFn: registerAccount,
     onSuccess: async (data) => {
+      // See login/page.tsx's comment — a previous account's cached "me"/
+      // "workspaces" (etc.) can otherwise be served stale to this brand
+      // new account within the 30s staleTime window, landing it in the
+      // previous account's workspace instead of its own.
+      queryClient.clear();
       storeSession(data);
       // See login/page.tsx — WorkspaceProvider's localStorage check only
       // runs once on initial mount, so this must be triggered explicitly.

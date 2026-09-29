@@ -202,7 +202,7 @@ function EmailSetupForm({
               aria-label={passwordVisible ? "Hide password" : "Show password"}
               className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-fgSubtle transition-colors hover:text-fg"
             >
-              {passwordVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              {passwordVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
             </button>
           </div>
         </Field>

@@ -18,7 +18,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HT
           aria-label={visible ? "Hide password" : "Show password"}
           className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-fgSubtle transition-colors hover:text-fg"
         >
-          {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
         </button>
       </div>
     );

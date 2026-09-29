@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/Button";
@@ -20,6 +21,7 @@ import {
   type EmailSetupCreatePayload,
   type EmailSetupDefaults,
 } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { getErrorMessage } from "@/lib/errors";
 import { toast } from "sonner";
 
@@ -105,6 +107,7 @@ function EmailSetupForm({
   error: boolean;
 }) {
   const [form, setForm] = useState<FormState>(initial);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   useEffect(() => {
     setForm(initial);
@@ -182,15 +185,26 @@ function EmailSetupForm({
               : "SMTP password or app-specific password."
           }
         >
-          <input
-            required={mode === "create"}
-            type="password"
-            value={form.smtp_password}
-            onChange={(e) => set("smtp_password", e.target.value)}
-            placeholder={mode === "edit" ? "••••••••" : defaults.smtp_password}
-            className={inputClass}
-            autoComplete="new-password"
-          />
+          <div className="relative">
+            <input
+              required={mode === "create"}
+              type={passwordVisible ? "text" : "password"}
+              value={form.smtp_password}
+              onChange={(e) => set("smtp_password", e.target.value)}
+              placeholder={mode === "edit" ? "••••••••" : defaults.smtp_password}
+              className={cn(inputClass, "w-full pr-9")}
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setPasswordVisible((v) => !v)}
+              aria-label={passwordVisible ? "Hide password" : "Show password"}
+              className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-fgSubtle transition-colors hover:text-fg"
+            >
+              {passwordVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </div>
         </Field>
         <label className="flex items-center gap-2 text-[13px] text-fg sm:col-span-2">
           <input

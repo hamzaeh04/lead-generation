@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { getErrorMessage } from "@/lib/errors";
 import { getCurrentUser, login, storeSession } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -86,9 +87,8 @@ export default function LoginPage() {
               />
             </Field>
             <Field label="Password" htmlFor="password">
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 required
                 autoComplete="current-password"
                 placeholder="••••••••"

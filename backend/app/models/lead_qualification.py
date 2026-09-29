@@ -44,7 +44,13 @@ class LeadQualification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # [{"dimension": ..., "claim": ..., "observation": ..., "source_platform": ..., ...}]
     evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
     overrides_triggered: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
-    disqualifier: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    #: The model routinely writes a full explanatory sentence here rather
+    #: than a bare category name (e.g. "REGULATORY — Lead is employed by
+    #: ..."), despite the prompt asking for a short cited name — a 100-char
+    #: cap was too narrow for that and made every verbose disqualification
+    #: fail to save (StringDataRightTruncationError), so this is
+    #: unconstrained like every other free-text explanation field here.
+    disqualifier: Mapped[str | None] = mapped_column(Text, nullable=True)
     # [{"field": ..., "why_it_matters": ..., "how_to_obtain": ...}]
     missing_data: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
 

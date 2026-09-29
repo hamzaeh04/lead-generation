@@ -5,8 +5,8 @@ auto-generate AI drafts and send via an assigned SMTP Email Setup.
 These columns record which mailbox/campaign were used and how far
 the automation got.
 
-Revision ID: 0031
-Revises: 0030
+Revision ID: 0031b
+Revises: 0031
 Create Date: 2026-09-26
 
 """
@@ -15,8 +15,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0031"
-down_revision: str | None = "0030"
+revision: str = "0031b"
+down_revision: str | None = "0031"
 branch_labels: Sequence[str] | str | None = None
 depends_on: Sequence[str] | str | None = None
 

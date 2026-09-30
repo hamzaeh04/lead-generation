@@ -375,6 +375,25 @@ async def test_search_execute_auto_reveals_apollo_leads_but_not_phone(
         AsyncMock(return_value=_StubApolloDiscoveryProvider()),
     )
 
+    class _SharedSessionContextManager:
+        """reveal_contacts_in_background opens its own AsyncSessionLocal()
+        session in production — see the identical pattern/comment on
+        qualify_contacts_in_background's own test above. Reused here since
+        reveal now runs the same way (backgrounded, not inline in
+        /search/execute) for the same reason: a real search's sequential
+        per-contact Apollo reveal calls could take well over a minute,
+        long past ngrok/proxy timeouts — see search_service.py."""
+
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(
+        "app.services.search_service.AsyncSessionLocal", lambda: _SharedSessionContextManager()
+    )
+
     response = await client.post(
         "/api/v1/search/execute",
         json={
@@ -387,11 +406,24 @@ async def test_search_execute_auto_reveals_apollo_leads_but_not_phone(
     )
 
     assert response.status_code == 200
-    contact = response.json()["contacts"][0]
+    body = response.json()
+    # Reveal now runs in the background (see search_service.py's
+    # reveal_contacts_in_background) — the search response itself returns
+    # the pre-reveal masked state; the real email lands a moment later.
+    assert body["contacts"][0]["email"] is None
+    contact_id = body["contacts"][0]["id"]
+
+    db_session.expire_all()
+    lead_response = await client.get(
+        f"/api/v1/leads/{contact_id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert lead_response.status_code == 200
+    contact = lead_response.json()
     assert contact["email"] == "jane@acme.example"
     assert contact["linkedin_url"] == "https://linkedin.com/in/janedoe"
     assert contact["email_status"] == "verified"
     assert contact["phone"] is None
+    assert contact["email_reveal_attempted"] is True
 
 
 async def test_reveal_all_in_batch_skips_already_revealed(client, db_session, unique_email, monkeypatch):
@@ -427,6 +459,25 @@ async def test_reveal_all_in_batch_skips_already_revealed(client, db_session, un
     monkeypatch.setattr(
         "app.services.lead_reveal_service.provider_factory.build_provider_for_workspace",
         AsyncMock(return_value=_StubApolloRevealProvider()),
+    )
+
+    class _SharedSessionContextManager:
+        """reveal_contacts_in_background opens its own AsyncSessionLocal()
+        session in production — see the identical pattern/comment used for
+        qualify_contacts_in_background elsewhere in this file. /reveal-all
+        now schedules reveal in the background for the same reason
+        qualify/reveal-on-search already do: a real reveal() call is a
+        live Apollo/Smartlead API request per contact, too slow to hold
+        the HTTP request open for a full batch."""
+
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(
+        "app.services.search_service.AsyncSessionLocal", lambda: _SharedSessionContextManager()
     )
 
     already_revealed = Contact(
@@ -470,8 +521,8 @@ async def test_reveal_all_in_batch_skips_already_revealed(client, db_session, un
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 2
-    assert body["revealed"] == 1
-    assert body["skipped"] == 1
+    assert body["scheduled"] == 1
+    assert body["already_revealed"] == 1
 
     db_session.expire_all()
     lead_response = await client.get(

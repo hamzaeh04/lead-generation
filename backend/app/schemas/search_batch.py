@@ -65,9 +65,16 @@ class BatchQualifyResponse(BaseModel):
 
 
 class BatchRevealResponse(BaseModel):
-    revealed: int
-    skipped: int
-    failed: int
+    """Reveal runs as a background task — a real reveal() call is a live
+    Apollo/Smartlead API request per contact, and a full batch's worth
+    sequentially (measured: 72s for 100 contacts) is long enough to exceed
+    typical proxy/tunnel timeouts if the HTTP request stayed open for all
+    of it. So this reports what got scheduled, not final counts; poll the
+    batch (already done via the batch page's refetchInterval) to see
+    emails land."""
+
+    scheduled: int
+    already_revealed: int
     total: int
 
 

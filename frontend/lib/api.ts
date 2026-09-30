@@ -349,6 +349,10 @@ export interface Contact {
   department: string | null;
   seniority: string | null;
   email: string | null;
+  /** True once an email-reveal request has been made for this contact
+   * (auto-triggered in the background right after search), regardless of
+   * whether it found one — "still waiting" vs "never asked". */
+  email_reveal_attempted: boolean;
   phone: string | null;
   /** True once a phone-reveal request has been sent to Apollo, regardless
    * of whether a number ever came back — "still waiting" vs "never asked". */
@@ -442,9 +446,8 @@ export async function qualifyBatch(workspaceId: string, batchId: string): Promis
 }
 
 export interface BatchRevealResponse {
-  revealed: number;
-  skipped: number;
-  failed: number;
+  scheduled: number;
+  already_revealed: number;
   total: number;
 }
 

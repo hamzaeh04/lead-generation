@@ -34,6 +34,12 @@ class ContactRead(BaseModel):
     seniority: str | None
     email: str | None
     email_status: str | None
+    #: True once a reveal request for this contact's email has been made
+    #: (auto-triggered right after search, now in the background — see
+    #: reveal_contacts_in_background), regardless of whether it found one.
+    #: Same "still waiting" vs "never asked" purpose as
+    #: phone_reveal_attempted below.
+    email_reveal_attempted: bool
     phone: str | None
     #: True once a phone-reveal request has been sent to Apollo for this
     #: contact, regardless of whether a number ever came back — lets the

@@ -15,8 +15,13 @@ from app.schemas.search import (
     SearchExecuteResponse,
 )
 from app.services.batch_outreach_service import draft_batch_in_background
+from app.services.lead_reveal_service import _AUTO_REVEAL_PROVIDERS
 from app.services.prospect_prompt_service import ProspectPromptService
-from app.services.search_service import SearchService, qualify_contacts_in_background
+from app.services.search_service import (
+    SearchService,
+    qualify_contacts_in_background,
+    reveal_contacts_in_background,
+)
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -91,13 +96,25 @@ async def execute_search(
         created_by=current_user.id,
     )
 
-    # Score + draft run after the response is sent so a large batch never
-    # risks the HTTP request timing out. Drafts are scheduled separately
-    # from scoring so they start immediately — they used to wait until
-    # every lead finished qualify (often many minutes), which made it look
-    # like drafts only existed after clicking "Generate draft".
+    # Reveal + score + draft all run after the response is sent so a large
+    # batch never risks the HTTP request timing out. Reveal is scheduled
+    # first (same order the old inline code ran in) so qualification still
+    # sees real email/location/seniority data once it runs, rather than
+    # the pre-reveal masked state — BackgroundTasks run in the order
+    # they're added. Drafts are scheduled separately from scoring so they
+    # start immediately — they used to wait until every lead finished
+    # qualify (often many minutes), which made it look like drafts only
+    # existed after clicking "Generate draft".
     contact_ids = [contact.id for contact in result["contacts"]]
     batch_id = result.get("batch_id")
+    if contact_ids and payload.provider in _AUTO_REVEAL_PROVIDERS:
+        background_tasks.add_task(
+            reveal_contacts_in_background,
+            workspace_id=payload.workspace_id,
+            contact_ids=contact_ids,
+            provider=payload.provider,
+            settings=settings,
+        )
     if contact_ids:
         background_tasks.add_task(
             qualify_contacts_in_background,

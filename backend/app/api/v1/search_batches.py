@@ -18,9 +18,8 @@ from app.schemas.search_batch import (
     SearchBatchRead,
 )
 from app.services.batch_outreach_service import draft_batch_in_background
-from app.services.lead_reveal_service import LeadRevealService
 from app.services.phone_enrichment_service import PhoneEnrichmentService
-from app.services.search_service import qualify_contacts_in_background
+from app.services.search_service import qualify_contacts_in_background, reveal_contacts_in_background
 
 router = APIRouter(prefix="/search-batches", tags=["search-batches"])
 
@@ -144,26 +143,41 @@ async def qualify_all_in_batch(
 async def reveal_all_in_batch(
     batch_id: uuid.UUID,
     workspace_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     _membership=Depends(require_workspace_member),
     session: AsyncSession = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ):
     """Manual recovery action for when automatic post-search reveal was
     interrupted (server restart, network blip) partway through a batch —
-    reveals every not-yet-revealed contact in this batch. Reuses
-    reveal_many's own guards (already has email, already attempted) so
-    re-running this after a partial failure only touches what's still
-    missing, never re-billing a contact that was already revealed."""
+    schedules reveal for every not-yet-revealed contact as a background
+    task, rather than awaiting it inline: a real reveal() call is a live
+    Apollo/Smartlead API request per contact, and a full batch's worth
+    sequentially (measured: 72s for 100 contacts) risks the ngrok tunnel/
+    proxy timing out well before the server finishes — which then looks
+    like a failure and invites a second click on a batch that's actually
+    still working. Skips contacts that already have an email or already
+    had a reveal attempted — re-running this after a partial completion
+    only schedules what's still missing. Emails land on the batch page's
+    existing polling as they finish; this response only reports what got
+    scheduled."""
     batch_repo = SearchBatchRepository(session)
     batch = await batch_repo.get_by_id(workspace_id, batch_id)
     if batch is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search batch not found")
 
     contacts = await batch_repo.list_contacts(batch_id)
-    service = LeadRevealService(session, settings)
-    result = await service.reveal_many(workspace_id=workspace_id, contacts=contacts, provider=batch.provider)
+    to_reveal = [c for c in contacts if c.revealable]
+    if to_reveal:
+        background_tasks.add_task(
+            reveal_contacts_in_background,
+            workspace_id=workspace_id,
+            contact_ids=[c.id for c in to_reveal],
+            provider=batch.provider,
+            settings=settings,
+        )
     return BatchRevealResponse(
-        revealed=result.revealed, skipped=result.skipped, failed=result.failed, total=result.total
+        scheduled=len(to_reveal), already_revealed=len(contacts) - len(to_reveal), total=len(contacts)
     )
 
 

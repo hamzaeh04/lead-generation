@@ -36,7 +36,7 @@ from app.services import provider_factory
 from app.services.company_resolver import CompanyEntityResolver
 from app.services.contact_resolver import PersonEntityResolver
 from app.services.lead_qualification_service import LeadQualificationService
-from app.services.lead_reveal_service import _AUTO_REVEAL_PROVIDERS, LeadRevealService
+from app.services.lead_reveal_service import LeadRevealService
 from app.services.provider_usage_tracker import ProviderUsageRecorder
 from app.utils.logging import get_logger
 
@@ -82,6 +82,48 @@ async def qualify_contacts_in_background(
             "background_qualification_finished",
             workspace_id=str(workspace_id),
             qualified=result.qualified,
+            skipped=result.skipped,
+            failed=result.failed,
+            total=result.total,
+        )
+
+
+async def reveal_contacts_in_background(
+    *, workspace_id: uuid.UUID, contact_ids: list[uuid.UUID], provider: str, settings: Settings
+) -> None:
+    """Runs reveal_many() outside the search request/response cycle — same
+    reasoning as qualify_contacts_in_background above, and the same bug it
+    already fixed once: this used to run inline inside execute(), one real
+    Apollo/Smartlead reveal call per newly-found contact, sequentially. Fine
+    for a handful of leads; for a 100-lead search that's well over a minute
+    (measured: 72s for 100), long enough that ngrok's tunnel and Next.js's
+    own proxy (both observed timing out around 30s) kill the connection and
+    hand the browser an empty 500 — even though the backend keeps working
+    and the batch/contacts had already committed successfully before reveal
+    ever started. The search results (and their scores) always contained
+    the full requested count; only the *emails* were still filling in.
+
+    Runs on its own fresh session — the request-scoped session used by
+    execute() is closed once the response is sent, so this can't reuse it.
+    """
+    async with AsyncSessionLocal() as session:
+        contacts_result = await session.execute(
+            select(Contact)
+            .where(Contact.id.in_(contact_ids))
+            .options(selectinload(Contact.sources))
+        )
+        contacts = list(contacts_result.scalars().all())
+        if not contacts:
+            return
+        reveal_service = LeadRevealService(session, settings)
+        result = await reveal_service.reveal_many(
+            workspace_id=workspace_id, contacts=contacts, provider=provider
+        )
+        logger.info(
+            "background_reveal_finished",
+            workspace_id=str(workspace_id),
+            provider=provider,
+            revealed=result.revealed,
             skipped=result.skipped,
             failed=result.failed,
             total=result.total,
@@ -234,34 +276,19 @@ class SearchService:
             )
             touched_contacts = {c.id: c for c in reloaded.scalars().all()}
 
-        if touched_contacts and provider_name in _AUTO_REVEAL_PROVIDERS:
-            # Reveal masked results automatically — no manual "Reveal"
-            # button anymore, per explicit instruction. Runs before
-            # qualification so the AI scoring step sees real email/
-            # location/seniority data instead of the pre-reveal masked
-            # state. reveal_many reuses reveal()'s own guards (already
-            # has email, already attempted) so this never re-bills a
-            # contact across repeated searches.
-            reveal_service = LeadRevealService(self.session, self.settings)
-            await reveal_service.reveal_many(
-                workspace_id=workspace_id, contacts=list(touched_contacts.values()), provider=provider_name
-            )
-            reloaded = await self.session.execute(
-                select(Contact)
-                .where(Contact.id.in_(touched_contacts.keys()))
-                .options(selectinload(Contact.company), selectinload(Contact.sources), selectinload(Contact.qualifications))
-                .execution_options(populate_existing=True)
-            )
-            touched_contacts = {c.id: c for c in reloaded.scalars().all()}
-
-        # Qualification is scheduled by the API layer as a background task
-        # (see qualify_contacts_in_background above and
-        # app/api/v1/search.py) rather than awaited here — it's the slow
-        # part (one AI call per lead, several seconds each) and blocking
-        # the response on it was causing multi-minute requests that the
-        # ngrok tunnel/browser would give up on. The response below
-        # returns with each contact's pre-scoring `latest_qualification`
-        # (None for anything new); scores land on the next refetch.
+        # Reveal AND qualification are both scheduled by the API layer as
+        # background tasks (see reveal_contacts_in_background/
+        # qualify_contacts_in_background above and app/api/v1/search.py)
+        # rather than awaited here. Reveal used to run inline right here —
+        # one real Apollo/Smartlead API call per newly-found contact,
+        # sequentially — which for a full-size search (measured: 72s for
+        # 100 leads) ran well past ngrok's tunnel and Next.js's own proxy
+        # timeouts (both observed around 30s), killing the connection with
+        # an empty 500 even though the batch/contacts below had already
+        # committed successfully and the backend kept working regardless.
+        # The response below returns with each contact in its pre-reveal/
+        # pre-scoring state (masked email, `latest_qualification` None for
+        # anything new); both land a little later on refetch.
 
         logger.info(
             "search_executed",

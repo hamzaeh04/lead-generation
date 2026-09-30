@@ -56,12 +56,16 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
     queryKey: ["search-batch", workspaceId, batchId],
     queryFn: () => getSearchBatch(workspaceId!, batchId),
     enabled: !!workspaceId,
-    // Scoring runs as a background task after the search response returns
-    // (see search_service.qualify_contacts_in_background) — the leads on
-    // this page can go from "not scored yet" to scored with nobody
-    // clicking anything, so poll for that instead of requiring a manual
-    // reload. Stops on its own once every lead has a score, so it doesn't
-    // poll forever on a batch that's already fully settled.
+    // Scoring AND email reveal both run as background tasks after the
+    // search response returns (see search_service.qualify_contacts_in_
+    // background / reveal_contacts_in_background — reveal used to run
+    // inline, but a full-size search's sequential per-contact Apollo/
+    // Smartlead calls could take well over a minute, past ngrok/proxy
+    // timeouts) — the leads on this page can go from masked/unscored to
+    // revealed/scored with nobody clicking anything, so poll for that
+    // instead of requiring a manual reload. Stops on its own once every
+    // lead has settled, so it doesn't poll forever on an already-settled
+    // batch.
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
@@ -75,7 +79,13 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
         phoneEnrichRequestedAt !== null &&
         Date.now() - phoneEnrichRequestedAt < 2 * 60 * 1000 &&
         data.contacts.some((c) => c.phone_reveal_attempted && !c.phone);
-      if (stillScoring || stillOutreach || recentIdle || pendingPhoneReveal) return 4000;
+      // Only Apollo/Smartlead auto-reveal email — a manually-created batch
+      // never sets email_reveal_attempted, which would otherwise poll
+      // forever.
+      const stillRevealingEmail =
+        (data.provider === "apollo" || data.provider === "smartlead") &&
+        data.contacts.some((c) => !c.email_reveal_attempted);
+      if (stillScoring || stillOutreach || recentIdle || pendingPhoneReveal || stillRevealingEmail) return 4000;
       return false;
     },
   });
@@ -123,11 +133,20 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
   const revealMutation = useMutation({
     mutationFn: () => revealBatch(workspaceId!, batchId),
     onSuccess: (result) => {
-      toast.success(
-        `Enriched ${result.revealed} lead${result.revealed === 1 ? "" : "s"}` +
-          (result.skipped ? ` · ${result.skipped} already had it` : "") +
-          (result.failed ? ` · ${result.failed} failed` : "")
-      );
+      // Reveal runs in the background now (a real reveal is a live
+      // Apollo/Smartlead API call per lead, too slow to hold the request
+      // open for a full batch) — this only confirms what got scheduled,
+      // not final results. The batch page already polls while any
+      // contact hasn't had reveal attempted yet, so emails appear on
+      // their own as they land.
+      if (result.scheduled === 0) {
+        toast.success("All leads in this batch are already revealed");
+      } else {
+        toast.success(
+          `Enriching ${result.scheduled} lead${result.scheduled === 1 ? "" : "s"} in the background — ` +
+            "emails will appear here as they finish"
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] });
     },
     onError: (error) => toast.error(getErrorMessage(error)),

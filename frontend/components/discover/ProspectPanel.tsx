@@ -13,7 +13,7 @@ import {
   Sparkles,
   SlidersHorizontal,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Label";
@@ -430,6 +430,18 @@ export function ProspectPanel({
 }) {
   const [mode, setMode] = useState<"prompt" | "manual">("prompt");
   const [prompt, setPrompt] = useState("");
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fixed rows/height clipped anything past 3 lines behind a scrollbar
+  // inside a tiny box, with the AI Search button sitting right on top of
+  // it — grow the box to fit what's actually typed instead (capped so an
+  // extreme prompt scrolls rather than pushing the button off-screen).
+  useEffect(() => {
+    const el = promptRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [prompt]);
 
   const parseMutation = useMutation({
     mutationFn: () => parseProspectPrompt({ workspace_id: workspaceId!, provider, prompt }),
@@ -473,6 +485,7 @@ export function ProspectPanel({
 
               <div className="relative px-5 pb-16 pt-2">
                 <Textarea
+                  ref={promptRef}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => {
@@ -483,7 +496,7 @@ export function ProspectPanel({
                   }}
                   placeholder="Ask AI to build your prospect list…"
                   rows={3}
-                  className="min-h-[92px] w-full resize-none border-none bg-transparent p-0 text-lg leading-relaxed shadow-none placeholder:text-fgSubtle focus:ring-0"
+                  className="max-h-[300px] min-h-[92px] w-full resize-none overflow-y-auto border-none bg-transparent p-0 text-lg leading-relaxed shadow-none placeholder:text-fgSubtle focus:ring-0"
                 />
                 <Button
                   type="button"

@@ -236,14 +236,23 @@ export function AppShell({
   fullWidth?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { currentUser, authStatus } = useWorkspace();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     if (authStatus === "unauthenticated") {
+      // Diagnostic (see workspace-context.tsx for the matching log at the
+      // source of this decision) — remove once the "logs in fine, lands
+      // on /dashboard, then gets bounced back" report is root-caused.
+      // eslint-disable-next-line no-console
+      console.error("[auth-debug] AppShell redirecting to /login", {
+        pathname,
+        hasAccessToken: typeof window !== "undefined" ? !!window.localStorage.getItem("access_token") : null,
+      });
       router.replace("/login");
     }
-  }, [authStatus, router]);
+  }, [authStatus, router, pathname]);
 
   useEffect(() => {
     setMobileNavOpen(false);

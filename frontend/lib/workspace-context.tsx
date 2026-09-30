@@ -76,6 +76,28 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     else if (userQuery.isError) authStatus = "unauthenticated";
   }
 
+  // Diagnostic: a token exists but "me" still errored is the one path
+  // that bounces a genuinely-logged-in user back to /login (reported:
+  // logs in with correct credentials, lands on /dashboard, then gets
+  // sent straight back). Every reproduction attempt so far has this call
+  // succeed, so the next real occurrence needs to be caught in the
+  // wild — this logs exactly what the request/error looked like instead
+  // of the app just silently bouncing. Safe to remove once this is
+  // root-caused; does nothing when things are working normally.
+  useEffect(() => {
+    if (mounted && hasToken && userQuery.isError) {
+      const err = userQuery.error as { message?: string; response?: { status?: number; data?: unknown } } | undefined;
+      // eslint-disable-next-line no-console
+      console.error("[auth-debug] /auth/me failed with a token present — bouncing to /login", {
+        message: err?.message,
+        responseStatus: err?.response?.status,
+        responseData: err?.response?.data,
+        failureCount: userQuery.failureCount,
+        failureReason: userQuery.failureReason,
+      });
+    }
+  }, [mounted, hasToken, userQuery.isError, userQuery.error, userQuery.failureCount, userQuery.failureReason]);
+
   const value: WorkspaceContextValue = {
     currentUser: userQuery.data ?? null,
     workspaces,

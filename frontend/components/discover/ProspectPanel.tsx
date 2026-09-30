@@ -343,21 +343,26 @@ function ManualFieldsForProvider({
 }
 
 /** Filter-count badge + result-limit picker + (optional) run button — the
- * same control row used under the Manual filters tab, reused as-is under
- * the live side panel next to the AI prompt box so both places let you set
- * how many leads to fetch, not just Manual filters. */
+ * same control row used under the Manual filters tab, reused under the
+ * live side panel next to the AI prompt box so both places let you set
+ * how many leads to fetch. The run button itself is opt-in: AI Search
+ * already parses the prompt and runs the search in one click (see
+ * parseMutation below), so a second "Run search" button next to the live
+ * panel would just be a redundant way to re-trigger the exact same thing. */
 function FiltersFooterBar({
   criteria,
   onCriteriaChange,
   onSearch,
   searching,
   runLabel = "Run search",
+  showRunButton = true,
 }: {
   criteria: DiscoveryCriteria;
   onCriteriaChange: (criteria: DiscoveryCriteria) => void;
   onSearch: (criteria: DiscoveryCriteria) => void;
   searching: boolean;
   runLabel?: string;
+  showRunButton?: boolean;
 }) {
   const activeFilterCount = countActiveFilters(criteria);
   return (
@@ -391,16 +396,18 @@ function FiltersFooterBar({
             ))}
           </SelectContent>
         </Select>
-        <Button
-          type="button"
-          size="lg"
-          loading={searching}
-          onClick={() => onSearch(criteria)}
-          className="border-none bg-gradient-to-r from-indigo-500 via-violet-500 to-pink-500 font-semibold text-white shadow-sm hover:opacity-90"
-        >
-          <Search className="h-3.5 w-3.5" />
-          {runLabel}
-        </Button>
+        {showRunButton && (
+          <Button
+            type="button"
+            size="lg"
+            loading={searching}
+            onClick={() => onSearch(criteria)}
+            className="border-none bg-gradient-to-r from-indigo-500 via-violet-500 to-pink-500 font-semibold text-white shadow-sm hover:opacity-90"
+          >
+            <Search className="h-3.5 w-3.5" />
+            {runLabel}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -545,6 +552,7 @@ export function ProspectPanel({
             onCriteriaChange={onCriteriaChange}
             onSearch={onSearch}
             searching={searching}
+            showRunButton={false}
           />
         </div>
         </div>

@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LogoMarkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -20,6 +20,17 @@ export default function LoginPage() {
   const { refreshAuth } = useWorkspace();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // The server-rendered button has no disabled attribute until this flips
+  // true, so it's genuinely inert (not just "no handler yet") from the
+  // first paint. Without this, a click landing in the gap between paint
+  // and hydration — real on a slow connection/tunnel — fires this native
+  // <button type="submit"> the normal browser way: a full-page GET
+  // reload of /login with no onSubmit ever running to stop it, wiping
+  // every typed field back to empty. Looks exactly like "the page just
+  // refreshed and cleared my credentials," because that's literally what
+  // happened.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const mutation = useMutation({
     mutationFn: login,
@@ -96,7 +107,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
-            <Button type="submit" loading={mutation.isPending} className="mt-1 w-full">
+            <Button type="submit" disabled={!mounted} loading={mutation.isPending} className="mt-1 w-full">
               {mutation.isPending ? "Logging in…" : "Log in"}
             </Button>
             {mutation.isError && (

@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LogoMarkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -22,6 +22,13 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
+  // See login/page.tsx's comment on this same pattern — closes the gap
+  // where a click lands after paint but before hydration, which would
+  // otherwise fire this native <button type="submit"> the normal browser
+  // way (a full-page reload wiping every field) instead of the real
+  // onSubmit handler.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const mutation = useMutation({
     mutationFn: registerAccount,
@@ -109,7 +116,7 @@ export default function RegisterPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
-            <Button type="submit" loading={mutation.isPending} className="mt-1 w-full">
+            <Button type="submit" disabled={!mounted} loading={mutation.isPending} className="mt-1 w-full">
               {mutation.isPending ? "Creating…" : "Create workspace"}
             </Button>
             {mutation.isError && (

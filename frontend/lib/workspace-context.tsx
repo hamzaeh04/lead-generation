@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { getCurrentUser, listWorkspaces, type User, type Workspace } from "@/lib/api";
 
 const ACTIVE_WORKSPACE_KEY = "active_workspace_id";
@@ -87,14 +88,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (mounted && hasToken && userQuery.isError) {
       const err = userQuery.error as { message?: string; response?: { status?: number; data?: unknown } } | undefined;
-      // eslint-disable-next-line no-console
-      console.error("[auth-debug] /auth/me failed with a token present — bouncing to /login", {
+      const detail = {
         message: err?.message,
         responseStatus: err?.response?.status,
         responseData: err?.response?.data,
         failureCount: userQuery.failureCount,
         failureReason: userQuery.failureReason,
-      });
+      };
+      // eslint-disable-next-line no-console
+      console.error("[auth-debug] /auth/me failed with a token present — bouncing to /login", detail);
+      // Console logging alone hasn't surfaced this in the wild yet — put
+      // it directly on screen too, so it can't be missed. Remove this
+      // whole effect (and the matching one in AppShell.tsx) once the
+      // "logs in fine, lands on /dashboard, then gets bounced back"
+      // report is root-caused; does nothing when things work normally.
+      toast.error(
+        `Auth debug: /auth/me failed (status ${detail.responseStatus ?? "?"}) — ${detail.message ?? "no message"}`,
+        { duration: 30000 }
+      );
     }
   }, [mounted, hasToken, userQuery.isError, userQuery.error, userQuery.failureCount, userQuery.failureReason]);
 

@@ -14,6 +14,7 @@ import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
+import { InlineEditableText } from "@/components/ui/InlineEditableText";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import { StatCard } from "@/components/ui/StatCard";
 import {
@@ -22,6 +23,7 @@ import {
   exportLeadsCsv,
   getSearchBatch,
   qualifyBatch,
+  renameSearchBatch,
   revealBatch,
   type LeadStatus,
 } from "@/lib/api";
@@ -189,6 +191,15 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
     onError: (error) => toast.error(getErrorMessage(error, "Export failed")),
   });
 
+  const renameMutation = useMutation({
+    mutationFn: (name: string) => renameSearchBatch(workspaceId!, batchId, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] });
+      queryClient.invalidateQueries({ queryKey: ["search-batches", workspaceId] });
+    },
+    onError: (error) => toast.error(getErrorMessage(error, "Could not rename batch")),
+  });
+
   if (batchQuery.isLoading || !batch) {
     return (
       <div className="flex flex-col gap-4">
@@ -253,9 +264,12 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold text-fg">
-            {batch.name?.trim() || `Batch ${String(batch.sequence).padStart(2, "0")}`}
-          </h2>
+          <InlineEditableText
+            as="h2"
+            className="inline-block text-lg font-semibold text-fg"
+            value={batch.name?.trim() || `Batch ${String(batch.sequence).padStart(2, "0")}`}
+            onSave={(next) => renameMutation.mutate(next)}
+          />
           <p className="text-sm text-fgMuted">
             {batch.name?.trim()
               ? `Batch ${String(batch.sequence).padStart(2, "0")} · `

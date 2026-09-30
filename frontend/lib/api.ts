@@ -935,6 +935,19 @@ export async function createSearchBatch(
   return data;
 }
 
+export async function renameSearchBatch(
+  workspaceId: string,
+  batchId: string,
+  name: string
+): Promise<SearchBatch> {
+  const { data } = await api.patch<SearchBatch>(
+    `/search-batches/${batchId}`,
+    { name },
+    { params: { workspace_id: workspaceId } }
+  );
+  return data;
+}
+
 export async function getSearchBatch(workspaceId: string, batchId: string): Promise<SearchBatchDetail> {
   const { data } = await api.get<SearchBatchDetail>(`/search-batches/${batchId}`, {
     params: { workspace_id: workspaceId },

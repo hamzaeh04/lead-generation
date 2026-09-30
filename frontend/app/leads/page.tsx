@@ -1,16 +1,19 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, FolderPlus, Search, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { CreateBatchDialog } from "@/components/leads/CreateBatchDialog";
 import { GetLeadsDialog } from "@/components/leads/GetLeadsDialog";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { InlineEditableText } from "@/components/ui/InlineEditableText";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/cn";
-import { listSearchBatches, type SearchBatch } from "@/lib/api";
+import { listSearchBatches, renameSearchBatch, type SearchBatch } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace-context";
 
 const PROVIDER_INFO: Record<string, { label: string; badgeClass: string; icon: typeof Zap }> = {
@@ -31,7 +34,8 @@ function batchTitle(batch: SearchBatch): string {
   return batch.name?.trim() || formatBatchNumber(batch.sequence);
 }
 
-function BatchRow({ batch }: { batch: SearchBatch }) {
+function BatchRow({ batch, workspaceId }: { batch: SearchBatch; workspaceId: string }) {
+  const queryClient = useQueryClient();
   const info = PROVIDER_INFO[batch.provider] ?? {
     label: batch.provider,
     badgeClass: "bg-fgSubtle",
@@ -40,6 +44,15 @@ function BatchRow({ batch }: { batch: SearchBatch }) {
   const Icon = info.icon;
   const totalLeads = batch.contacts_created + batch.contacts_matched;
   const date = new Date(batch.created_at);
+
+  const renameMutation = useMutation({
+    mutationFn: (name: string) => renameSearchBatch(workspaceId, batch.id, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["search-batches", workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batch.id] });
+    },
+    onError: (error) => toast.error(getErrorMessage(error, "Could not rename batch")),
+  });
 
   return (
     <Link
@@ -56,7 +69,12 @@ function BatchRow({ batch }: { batch: SearchBatch }) {
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0">
-          <p className="font-semibold text-fg">{batchTitle(batch)}</p>
+          <InlineEditableText
+            as="p"
+            className="inline-block font-semibold text-fg"
+            value={batchTitle(batch)}
+            onSave={(next) => renameMutation.mutate(next)}
+          />
           <p className="truncate text-sm text-fgMuted">
             {formatBatchNumber(batch.sequence)} · {info.label} · {date.toLocaleDateString()}{" "}
             {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -121,7 +139,7 @@ function LeadsContent({
       {batches.length > 0 && (
         <Card interactive={false} className="flex flex-col divide-y divide-border p-0">
           {batches.map((batch) => (
-            <BatchRow key={batch.id} batch={batch} />
+            <BatchRow key={batch.id} batch={batch} workspaceId={activeWorkspace!.id} />
           ))}
         </Card>
       )}

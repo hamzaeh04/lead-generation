@@ -211,3 +211,15 @@ async def test_batch_listing_shows_assigned_email_or_none(client, db_session, un
         f"/api/v1/search-batches/{assigned_batch}", params={"workspace_id": workspace_id}, headers=headers
     )
     assert detail.json()["assigned_email"] == "assigned@agency.example"
+
+    # Renaming a batch must not drop its assigned_email from the response —
+    # SearchBatchRead's assigned_email isn't a plain ORM column, so the
+    # rename endpoint has to look it up explicitly, same as list/get do.
+    rename = await client.patch(
+        f"/api/v1/search-batches/{assigned_batch}",
+        params={"workspace_id": workspace_id},
+        json={"name": "Renamed"},
+        headers=headers,
+    )
+    assert rename.status_code == 200
+    assert rename.json()["assigned_email"] == "assigned@agency.example"

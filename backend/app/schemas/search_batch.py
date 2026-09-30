@@ -14,6 +14,14 @@ class SearchBatchCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 
 
+class SearchBatchRename(BaseModel):
+    """Click-to-rename on the batch detail page, same convention as a
+    Finder folder rename — name lives in criteria_snapshot["name"] like
+    every other batch (see SearchBatchRead.name), not a new column."""
+
+    name: str = Field(min_length=1, max_length=255)
+
+
 class SearchBatchRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

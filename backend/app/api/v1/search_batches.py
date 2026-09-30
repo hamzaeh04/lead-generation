@@ -18,6 +18,7 @@ from app.schemas.search_batch import (
     SearchBatchCreate,
     SearchBatchDetail,
     SearchBatchRead,
+    SearchBatchRename,
 )
 from app.services.batch_outreach_service import draft_batch_in_background
 from app.services.phone_enrichment_service import PhoneEnrichmentService
@@ -69,6 +70,35 @@ async def create_search_batch(
     await session.commit()
     await session.refresh(batch)
     return batch
+
+
+@router.patch("/{batch_id}", response_model=SearchBatchRead)
+async def rename_search_batch(
+    batch_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    payload: SearchBatchRename,
+    _membership=Depends(require_workspace_member),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Click-to-rename on the batch detail page, same UX as renaming a
+    Finder folder. Reassigns criteria_snapshot wholesale (not an in-place
+    dict mutation) so SQLAlchemy's change tracking picks it up without
+    needing flag_modified."""
+    repo = SearchBatchRepository(session)
+    batch = await repo.get_by_id(workspace_id, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search batch not found")
+
+    batch.criteria_snapshot = {**batch.criteria_snapshot, "name": payload.name.strip()}
+    await session.commit()
+    await session.refresh(batch)
+
+    assigned_email = None
+    if batch.email_setup_id is not None:
+        setup = await EmailSetupRepository(session).get_by_id(batch.email_setup_id)
+        assigned_email = setup.smtp_email if setup else None
+
+    return SearchBatchRead(**{**SearchBatchRead.model_validate(batch).model_dump(), "assigned_email": assigned_email})
 
 
 @router.get("/{batch_id}", response_model=SearchBatchDetail)

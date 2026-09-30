@@ -190,6 +190,67 @@ async def test_search_batches_require_workspace_membership(client, unique_email)
     assert response.status_code == 403
 
 
+async def test_rename_search_batch(client, unique_email):
+    """Click-to-rename on the batch detail page — name lives in
+    criteria_snapshot["name"], same as a manually-created batch's name."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    create_response = await client.post(
+        "/api/v1/search-batches",
+        params={"workspace_id": workspace_id},
+        json={"name": "Original Name"},
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+    batch_id = create_response.json()["id"]
+    assert create_response.json()["name"] == "Original Name"
+
+    rename_response = await client.patch(
+        f"/api/v1/search-batches/{batch_id}",
+        params={"workspace_id": workspace_id},
+        json={"name": "  Renamed Batch  "},
+        headers=headers,
+    )
+    assert rename_response.status_code == 200
+    assert rename_response.json()["name"] == "Renamed Batch"
+
+    get_response = await client.get(
+        f"/api/v1/search-batches/{batch_id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert get_response.json()["name"] == "Renamed Batch"
+
+
+async def test_rename_search_batch_rejects_empty_name(client, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    create_response = await client.post(
+        "/api/v1/search-batches",
+        params={"workspace_id": workspace_id},
+        json={"name": "Original Name"},
+        headers=headers,
+    )
+    batch_id = create_response.json()["id"]
+
+    rename_response = await client.patch(
+        f"/api/v1/search-batches/{batch_id}",
+        params={"workspace_id": workspace_id},
+        json={"name": ""},
+        headers=headers,
+    )
+    assert rename_response.status_code == 422
+
+
+async def test_rename_search_batch_404_for_unknown_batch(client, unique_email):
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+
+    response = await client.patch(
+        "/api/v1/search-batches/00000000-0000-0000-0000-000000000000",
+        params={"workspace_id": workspace_id},
+        json={"name": "New Name"},
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+
 async def test_zero_result_search_creates_no_batch(client, db_session, unique_email, monkeypatch):
     """Regression test: a search that finds nothing must not leave behind
     an empty "Batch NN — 0 leads" row cluttering the Leads page."""

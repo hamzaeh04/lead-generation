@@ -112,7 +112,8 @@ async def test_discover_people_never_stores_email_or_obfuscated_last_name():
                 "has_email": True,
                 "organization": {"name": "Acme Dental Group", "primary_domain": "acmedental.example"},
             }
-        ]
+        ],
+        "total_entries": 1,
     }
     provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=_client_with(payload))
 
@@ -125,6 +126,56 @@ async def test_discover_people_never_stores_email_or_obfuscated_last_name():
     assert results[0].metadata.external_id == "person-1"
     assert results[0].job_title == "Owner"
     assert results[0].company_domain == "acmedental.example"
+
+
+async def test_discover_people_backfills_additional_pages_to_reach_limit():
+    """Apollo's own total_entries can show far more real matches than a
+    single page returns (e.g. ranking/quality filtering on that specific
+    page) — this must page forward rather than silently under-delivering
+    what the caller asked for."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body["page"])
+        if body["page"] == 1:
+            people = [{"id": "p1", "first_name": "Alex"}, {"id": "p2", "first_name": "Bailey"}]
+        else:
+            people = [{"id": "p3", "first_name": "Casey"}]
+        return httpx.Response(200, json={"people": people, "total_entries": 3})
+
+    client = httpx.AsyncClient(
+        base_url="https://api.apollo.io", transport=httpx.MockTransport(handler)
+    )
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=client)
+
+    results = await provider.discover_people(DiscoveryCriteria(job_titles=["Manager"], limit=3))
+
+    assert calls == [1, 2]
+    assert len(results) == 3
+    assert [r.metadata.external_id for r in results] == ["p1", "p2", "p3"]
+
+
+async def test_discover_people_stops_once_total_entries_exhausted():
+    """Fewer real matches than the requested limit is a normal outcome —
+    must not keep paging (and burning Apollo credits/rate limit) once
+    total_entries is exhausted, even if the caller asked for more."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body["page"])
+        return httpx.Response(200, json={"people": [{"id": "p1", "first_name": "Alex"}], "total_entries": 1})
+
+    client = httpx.AsyncClient(
+        base_url="https://api.apollo.io", transport=httpx.MockTransport(handler)
+    )
+    provider = ApolloPersonDiscoveryProvider(api_key="test-key", client=client)
+
+    results = await provider.discover_people(DiscoveryCriteria(job_titles=["Manager"], limit=25))
+
+    assert calls == [1]
+    assert len(results) == 1
 
 
 async def test_reveal_maps_real_fields():

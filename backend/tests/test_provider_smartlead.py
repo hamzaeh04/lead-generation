@@ -167,9 +167,9 @@ _PROSPECT_RESPONSE = {
                 "linkedin": "linkedin.com/in/orhan-demiri",
             }
         ],
-        "scroll_id": "scroll-token",
+        "scroll_id": None,  # no more pages — backfill pagination must stop here
         "filter_id": 327105,
-        "total_count": 16064669,
+        "total_count": 1,
     },
 }
 
@@ -213,6 +213,77 @@ async def test_discover_people_without_campaign_id_hits_smartprospect():
     # filter_id isn't documented/unlockable via API yet, but must not be
     # discarded — a future reveal() implementation needs it.
     assert contact.metadata.raw_reference["_smartlead_filter_id"] == 327105
+
+
+@pytest.mark.asyncio
+async def test_discover_people_backfills_via_scroll_id_to_reach_limit():
+    """Smartlead can exclude matches server-side (bounced/unsubscribed/
+    do-not-contact/already in this account) even within one page, so
+    `list` can come back shorter than `limit` even though far more real
+    matches exist — must page forward via scroll_id rather than silently
+    under-delivering what was asked for."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        body = json.loads(request.content)
+        calls.append(body)
+        if "scroll_id" not in body:
+            data = {
+                "list": [{"id": "p1", "firstName": "Alex"}, {"id": "p2", "firstName": "Bailey"}],
+                "scroll_id": "scroll-1",
+                "filter_id": 1,
+                "total_count": 3,
+            }
+        else:
+            data = {
+                "list": [{"id": "p3", "firstName": "Casey"}],
+                "scroll_id": None,
+                "filter_id": 1,
+                "total_count": 3,
+            }
+        return httpx.Response(200, json={"success": True, "data": data})
+
+    prospect_client = httpx.AsyncClient(
+        base_url="https://prospect-api.smartlead.ai", transport=httpx.MockTransport(handler)
+    )
+    provider = SmartleadPersonDiscoveryProvider(
+        api_key="test-key", client=_client_with({}), prospect_client=prospect_client
+    )
+
+    results = await provider.discover_people(DiscoveryCriteria(job_titles=["Manager"], limit=3))
+
+    assert len(calls) == 2
+    assert "scroll_id" not in calls[0]
+    assert calls[1]["scroll_id"] == "scroll-1"
+    assert len(results) == 3
+    assert [r.metadata.external_id for r in results] == ["p1", "p2", "p3"]
+
+
+@pytest.mark.asyncio
+async def test_discover_people_stops_when_scroll_id_exhausted():
+    """Fewer real matches than the requested limit is a normal outcome —
+    must stop once Smartlead reports no more pages (scroll_id absent/
+    None), even if the caller asked for more."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        data = {"list": [{"id": "p1", "firstName": "Alex"}], "scroll_id": None, "filter_id": 1, "total_count": 1}
+        return httpx.Response(200, json={"success": True, "data": data})
+
+    prospect_client = httpx.AsyncClient(
+        base_url="https://prospect-api.smartlead.ai", transport=httpx.MockTransport(handler)
+    )
+    provider = SmartleadPersonDiscoveryProvider(
+        api_key="test-key", client=_client_with({}), prospect_client=prospect_client
+    )
+
+    results = await provider.discover_people(DiscoveryCriteria(job_titles=["Manager"], limit=25))
+
+    assert len(calls) == 1
+    assert len(results) == 1
 
 
 @pytest.mark.asyncio

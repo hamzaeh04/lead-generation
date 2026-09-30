@@ -93,11 +93,16 @@ function FilterSection({
   title,
   children,
   className,
+  compact,
 }: {
   icon: LucideIcon;
   title: string;
   children: React.ReactNode;
   className?: string;
+  /** Single-column, no matter the viewport — used in the narrow live-filters
+   * side panel next to the AI prompt box, where the normal sm:grid-cols-2
+   * would squeeze every field into an unreadably thin column. */
+  compact?: boolean;
 }) {
   const accent = SECTION_ACCENTS[title] ?? "from-accent to-accent";
   return (
@@ -119,7 +124,7 @@ function FilterSection({
         </span>
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
+      <div className={cn("grid grid-cols-1 gap-4", !compact && "sm:grid-cols-2")}>{children}</div>
     </div>
   );
 }
@@ -127,12 +132,14 @@ function FilterSection({
 function LocationFields({
   criteria,
   onChange,
+  compact,
 }: {
   criteria: DiscoveryCriteria;
   onChange: (criteria: DiscoveryCriteria) => void;
+  compact?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:col-span-2">
+    <div className={cn("grid grid-cols-1 gap-2 sm:col-span-2", !compact && "sm:grid-cols-3")}>
       <Input
         value={criteria.city ?? ""}
         onChange={(e) => onChange({ ...criteria, city: e.target.value || undefined })}
@@ -155,23 +162,26 @@ function LocationFields({
 function ApolloManualFields({
   criteria,
   onChange,
+  compact,
 }: {
   criteria: DiscoveryCriteria;
   onChange: (criteria: DiscoveryCriteria) => void;
+  compact?: boolean;
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const colSpan = compact ? "" : "lg:col-span-2";
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <FilterSection icon={Briefcase} title="Role">
-        <Field label="Job titles" className="sm:col-span-2">
+    <div className={cn("grid grid-cols-1 gap-4", !compact && "lg:grid-cols-2")}>
+      <FilterSection icon={Briefcase} title="Role" compact={compact}>
+        <Field label="Job titles" className={compact ? "" : "sm:col-span-2"}>
           <TagInput
             value={criteria.job_titles ?? []}
             onChange={(v) => onChange({ ...criteria, job_titles: v })}
             placeholder="e.g. VP of Sales"
           />
         </Field>
-        <Field label="Seniority" className="sm:col-span-2">
+        <Field label="Seniority" className={compact ? "" : "sm:col-span-2"}>
           <MultiSelectChips
             options={APOLLO_SENIORITIES.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))}
             value={criteria.seniorities ?? []}
@@ -180,7 +190,7 @@ function ApolloManualFields({
         </Field>
       </FilterSection>
 
-      <FilterSection icon={Building2} title="Company">
+      <FilterSection icon={Building2} title="Company" compact={compact}>
         <Field label="Min employees">
           <Input
             type="number"
@@ -197,7 +207,7 @@ function ApolloManualFields({
             onChange={(e) => onChange({ ...criteria, employee_count_max: e.target.value ? Number(e.target.value) : undefined })}
           />
         </Field>
-        <Field label="Keywords" htmlFor="keywords" className="sm:col-span-2">
+        <Field label="Keywords" htmlFor="keywords" className={compact ? "" : "sm:col-span-2"}>
           <Input
             id="keywords"
             value={criteria.keywords ?? ""}
@@ -207,11 +217,11 @@ function ApolloManualFields({
         </Field>
       </FilterSection>
 
-      <FilterSection icon={MapPin} title="Location" className="lg:col-span-2">
-        <LocationFields criteria={criteria} onChange={onChange} />
+      <FilterSection icon={MapPin} title="Location" className={colSpan} compact={compact}>
+        <LocationFields criteria={criteria} onChange={onChange} compact={compact} />
       </FilterSection>
 
-      <div className="lg:col-span-2">
+      <div className={colSpan}>
         <button
           type="button"
           onClick={() => setAdvancedOpen((v) => !v)}
@@ -224,7 +234,7 @@ function ApolloManualFields({
           <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", advancedOpen && "rotate-180")} />
         </button>
         {advancedOpen && (
-          <FilterSection icon={SlidersHorizontal} title="Advanced" className="mt-3">
+          <FilterSection icon={SlidersHorizontal} title="Advanced" className="mt-3" compact={compact}>
             <Field label="Technologies used">
               <TagInput
                 value={(extra(criteria, "technologies") as string[] | undefined) ?? []}
@@ -249,13 +259,16 @@ function ApolloManualFields({
 function SmartleadManualFields({
   criteria,
   onChange,
+  compact,
 }: {
   criteria: DiscoveryCriteria;
   onChange: (criteria: DiscoveryCriteria) => void;
+  compact?: boolean;
 }) {
+  const colSpan = compact ? "" : "lg:col-span-2";
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <FilterSection icon={Briefcase} title="Role">
+    <div className={cn("grid grid-cols-1 gap-4", !compact && "lg:grid-cols-2")}>
+      <FilterSection icon={Briefcase} title="Role" compact={compact}>
         <Field label="Job titles">
           <TagInput
             value={criteria.job_titles ?? []}
@@ -270,7 +283,7 @@ function SmartleadManualFields({
             placeholder="e.g. Sales"
           />
         </Field>
-        <Field label="Level" className="sm:col-span-2">
+        <Field label="Level" className={compact ? "" : "sm:col-span-2"}>
           <MultiSelectChips
             options={SMARTLEAD_LEVELS.map((s) => ({ value: s, label: s }))}
             value={(extra(criteria, "level") as string[] | undefined) ?? []}
@@ -279,7 +292,7 @@ function SmartleadManualFields({
         </Field>
       </FilterSection>
 
-      <FilterSection icon={Building2} title="Company">
+      <FilterSection icon={Building2} title="Company" compact={compact}>
         <Field label="Company domain" htmlFor="domain">
           <Input
             id="domain"
@@ -295,7 +308,7 @@ function SmartleadManualFields({
             placeholder="e.g. Financial Services"
           />
         </Field>
-        <Field label="Company size" className="sm:col-span-2">
+        <Field label="Company size" className={compact ? "" : "sm:col-span-2"}>
           <MultiSelectChips
             options={HEADCOUNT_BANDS.map((s) => ({ value: s, label: s }))}
             value={(extra(criteria, "companyHeadCount") as string[] | undefined) ?? []}
@@ -304,9 +317,91 @@ function SmartleadManualFields({
         </Field>
       </FilterSection>
 
-      <FilterSection icon={MapPin} title="Location" className="lg:col-span-2">
-        <LocationFields criteria={criteria} onChange={onChange} />
+      <FilterSection icon={MapPin} title="Location" className={colSpan} compact={compact}>
+        <LocationFields criteria={criteria} onChange={onChange} compact={compact} />
       </FilterSection>
+    </div>
+  );
+}
+
+function ManualFieldsForProvider({
+  provider,
+  criteria,
+  onChange,
+  compact,
+}: {
+  provider: "apollo" | "smartlead";
+  criteria: DiscoveryCriteria;
+  onChange: (criteria: DiscoveryCriteria) => void;
+  compact?: boolean;
+}) {
+  return provider === "apollo" ? (
+    <ApolloManualFields criteria={criteria} onChange={onChange} compact={compact} />
+  ) : (
+    <SmartleadManualFields criteria={criteria} onChange={onChange} compact={compact} />
+  );
+}
+
+/** Filter-count badge + result-limit picker + (optional) run button — the
+ * same control row used under the Manual filters tab, reused as-is under
+ * the live side panel next to the AI prompt box so both places let you set
+ * how many leads to fetch, not just Manual filters. */
+function FiltersFooterBar({
+  criteria,
+  onCriteriaChange,
+  onSearch,
+  searching,
+  runLabel = "Run search",
+}: {
+  criteria: DiscoveryCriteria;
+  onCriteriaChange: (criteria: DiscoveryCriteria) => void;
+  onSearch: (criteria: DiscoveryCriteria) => void;
+  searching: boolean;
+  runLabel?: string;
+}) {
+  const activeFilterCount = countActiveFilters(criteria);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface/95 p-3 pl-4 shadow-popover backdrop-blur">
+      <div className="flex items-center gap-2 text-sm text-fgMuted">
+        <span
+          className={cn(
+            "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
+            activeFilterCount > 0 ? "bg-accent text-white" : "bg-surface2 text-fgSubtle"
+          )}
+        >
+          {activeFilterCount}
+        </span>
+        {activeFilterCount > 0
+          ? `filter${activeFilterCount === 1 ? "" : "s"} applied`
+          : "No filters set — this will search broadly"}
+      </div>
+      <div className="flex items-center gap-2">
+        <Select
+          value={String(criteria.limit ?? 25)}
+          onValueChange={(v) => onCriteriaChange({ ...criteria, limit: Number(v) })}
+        >
+          <SelectTrigger className="h-10 w-[130px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[10, 25, 50, 100].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n} results
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          size="lg"
+          loading={searching}
+          onClick={() => onSearch(criteria)}
+          className="border-none bg-gradient-to-r from-indigo-500 via-violet-500 to-pink-500 font-semibold text-white shadow-sm hover:opacity-90"
+        >
+          <Search className="h-3.5 w-3.5" />
+          {runLabel}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -328,7 +423,6 @@ export function ProspectPanel({
 }) {
   const [mode, setMode] = useState<"prompt" | "manual">("prompt");
   const [prompt, setPrompt] = useState("");
-  const activeFilterCount = countActiveFilters(criteria);
 
   const parseMutation = useMutation({
     mutationFn: () => parseProspectPrompt({ workspace_id: workspaceId!, provider, prompt }),
@@ -341,7 +435,7 @@ export function ProspectPanel({
   });
 
   return (
-    <div className={cn("flex flex-col gap-5", mode === "manual" ? "" : "sm:max-w-3xl")}>
+    <div className="flex flex-col gap-5">
       <Tabs value={mode} onValueChange={(v) => setMode(v as "prompt" | "manual")}>
         <TabsList>
           <TabsTrigger value="prompt">
@@ -353,6 +447,7 @@ export function ProspectPanel({
       </Tabs>
 
       {mode === "prompt" && (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
         <div className="flex flex-col gap-5">
           <div className="relative">
             <div
@@ -429,56 +524,42 @@ export function ProspectPanel({
             </div>
           </div>
         </div>
+
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-fg">
+            <SlidersHorizontal className="h-3.5 w-3.5 text-fgSubtle" />
+            Filters
+            {parseMutation.isPending && (
+              <span className="text-xs font-normal text-fgSubtle">— AI is filling these in…</span>
+            )}
+          </div>
+          <p className="text-xs text-fgSubtle">
+            Fills in automatically from your prompt, or edit directly — either way it&apos;s what actually
+            gets searched.
+          </p>
+          <div className="flex max-h-[560px] flex-col gap-4 overflow-y-auto rounded-xl border border-border bg-surface2/30 p-3">
+            <ManualFieldsForProvider provider={provider} criteria={criteria} onChange={onCriteriaChange} compact />
+          </div>
+          <FiltersFooterBar
+            criteria={criteria}
+            onCriteriaChange={onCriteriaChange}
+            onSearch={onSearch}
+            searching={searching}
+          />
+        </div>
+        </div>
       )}
 
       {mode === "manual" && (
         <div className="flex flex-col gap-5">
-          {provider === "apollo" ? (
-            <ApolloManualFields criteria={criteria} onChange={onCriteriaChange} />
-          ) : (
-            <SmartleadManualFields criteria={criteria} onChange={onCriteriaChange} />
-          )}
-          <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface/95 p-3 pl-4 shadow-popover backdrop-blur">
-            <div className="flex items-center gap-2 text-sm text-fgMuted">
-              <span
-                className={cn(
-                  "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
-                  activeFilterCount > 0 ? "bg-accent text-white" : "bg-surface2 text-fgSubtle"
-                )}
-              >
-                {activeFilterCount}
-              </span>
-              {activeFilterCount > 0
-                ? `filter${activeFilterCount === 1 ? "" : "s"} applied`
-                : "No filters set — this will search broadly"}
-            </div>
-            <div className="flex items-center gap-2">
-              <Select
-                value={String(criteria.limit ?? 25)}
-                onValueChange={(v) => onCriteriaChange({ ...criteria, limit: Number(v) })}
-              >
-                <SelectTrigger className="h-10 w-[130px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[10, 25, 50, 100].map((n) => (
-                    <SelectItem key={n} value={String(n)}>
-                      {n} results
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                size="lg"
-                loading={searching}
-                onClick={() => onSearch(criteria)}
-                className="border-none bg-gradient-to-r from-indigo-500 via-violet-500 to-pink-500 font-semibold text-white shadow-sm hover:opacity-90"
-              >
-                <Search className="h-3.5 w-3.5" />
-                Run search
-              </Button>
-            </div>
+          <ManualFieldsForProvider provider={provider} criteria={criteria} onChange={onCriteriaChange} />
+          <div className="sticky bottom-4 z-10">
+            <FiltersFooterBar
+              criteria={criteria}
+              onCriteriaChange={onCriteriaChange}
+              onSearch={onSearch}
+              searching={searching}
+            />
           </div>
         </div>
       )}

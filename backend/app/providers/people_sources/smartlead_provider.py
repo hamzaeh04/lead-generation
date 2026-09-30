@@ -45,8 +45,17 @@ from app.providers.base import (
 )
 from app.providers.http import request_json
 from app.providers.people_sources.base import PersonDiscoveryProvider
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 _CAMPAIGN_BASE_URL = "https://server.smartlead.ai"
+
+# Safety cap on extra scroll_id follow-up requests when backfilling toward
+# the requested limit (see _discover_from_smartprospect) — bounds worst-case
+# request count if a query keeps returning short pages for some reason,
+# rather than looping until scroll_id simply runs out.
+_MAX_SMARTPROSPECT_PAGES = 5
 
 # SmartProspect fills these exact literals into every LOCKED (unpurchased)
 # result's email/linkedin fields — not a real value for anyone. Stored
@@ -156,24 +165,54 @@ class SmartleadPersonDiscoveryProvider(PersonDiscoveryProvider):
             if value is not None:
                 body[key] = value
 
-        payload = await request_json(
-            self._prospect_client,
-            "POST",
-            "/api/v1/search-email-leads/search-contacts",
-            provider=self.name,
-            params={"api_key": self._api_key},
-            json=body,
-        )
-        data = payload.get("data") or {}
-        leads = data.get("list") or []
-        # filter_id scopes this exact search — Smartlead's support-confirmed
-        # (not yet documented) unlock flow uses it to reveal emails for
-        # specific contacts from the search. No unlock endpoint is wired up
-        # yet (its real URL/params are pending Smartlead support), but we
-        # keep filter_id on each contact's raw_reference now so it isn't
-        # lost — wiring reveal() in later needs only this value plus the
-        # contact's external_id, not a re-search.
-        filter_id = data.get("filter_id")
+        # Smartlead can exclude matches server-side even within a single
+        # page — bounced/unsubscribed/on a do-not-contact list/already in
+        # this account (see the response's excluded_by_reason breakdown) —
+        # so `list` can come back shorter than `limit` even though
+        # `total_count` shows far more real matches exist. Page forward via
+        # scroll_id until there are actually `limit` usable leads or the
+        # results genuinely run out, instead of silently under-delivering
+        # what was asked for.
+        leads: list[dict] = []
+        filter_id: str | None = None
+        scroll_id: str | None = None
+        for page_num in range(_MAX_SMARTPROSPECT_PAGES):
+            request_body = dict(body)
+            if scroll_id:
+                request_body = {"limit": body["limit"], "scroll_id": scroll_id}
+
+            payload = await request_json(
+                self._prospect_client,
+                "POST",
+                "/api/v1/search-email-leads/search-contacts",
+                provider=self.name,
+                params={"api_key": self._api_key},
+                json=request_body,
+            )
+            data = payload.get("data") or {}
+            page_leads = data.get("list") or []
+            # filter_id scopes this exact search — Smartlead's support-
+            # confirmed (not yet documented) unlock flow uses it to reveal
+            # emails for specific contacts from the search. Only the first
+            # page's is kept; reveal() needs one filter_id per contact's
+            # source and this is the search that found it either way.
+            if filter_id is None:
+                filter_id = data.get("filter_id")
+            scroll_id = data.get("scroll_id")
+
+            if not page_leads:
+                break
+            leads.extend(page_leads)
+            if page_num > 0:
+                logger.info(
+                    "smartprospect_backfill_page",
+                    page=page_num + 1,
+                    collected=len(leads),
+                    requested=criteria.limit,
+                )
+            if len(leads) >= criteria.limit or not scroll_id:
+                break
+
         return [self._to_prospect_contact(lead, filter_id=filter_id) for lead in leads[: criteria.limit]]
 
     async def discover_decision_makers(

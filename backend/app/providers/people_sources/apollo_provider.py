@@ -29,8 +29,18 @@ from app.providers.base import (
 )
 from app.providers.http import request_json
 from app.providers.people_sources.base import PersonDiscoveryProvider
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 _BASE_URL = "https://api.apollo.io"
+
+# Safety cap on extra page requests when backfilling toward the requested
+# limit (see discover_people) — page 1 alone can come back shorter than
+# `per_page` even though Apollo's own `total_entries` shows far more exist
+# (e.g. ranking/quality filtering on that specific page), so this bounds
+# worst case request count rather than looping until pages run dry.
+_MAX_APOLLO_PAGES = 5
 
 # extra_filters keys passed straight through to Apollo's advanced params —
 # left out of DiscoveryCriteria's named fields since they're Apollo-specific
@@ -60,16 +70,41 @@ class ApolloPersonDiscoveryProvider(PersonDiscoveryProvider):
         )
 
     async def discover_people(self, criteria: DiscoveryCriteria) -> list[NormalizedContact]:
-        body = self._search_body(criteria)
-        payload = await request_json(
-            self._client,
-            "POST",
-            "/api/v1/mixed_people/api_search",
-            provider=self.name,
-            headers={"x-api-key": self._api_key},
-            json=body,
-        )
-        people = payload.get("people") or []
+        base_body = self._search_body(criteria)
+        # Apollo's own `total_entries` routinely shows hundreds of
+        # thousands of real matches, but a single page can come back
+        # shorter than `per_page` even so — page forward until there are
+        # actually `limit` people or `total_entries` is exhausted, instead
+        # of silently under-delivering what was asked for.
+        people: list[dict] = []
+        total_entries: int | None = None
+        for page_num in range(1, _MAX_APOLLO_PAGES + 1):
+            payload = await request_json(
+                self._client,
+                "POST",
+                "/api/v1/mixed_people/api_search",
+                provider=self.name,
+                headers={"x-api-key": self._api_key},
+                json={**base_body, "page": page_num},
+            )
+            page_people = payload.get("people") or []
+            total_entries = payload.get("total_entries")
+            if not page_people:
+                break
+            people.extend(page_people)
+            if page_num > 1:
+                logger.info(
+                    "apollo_search_backfill_page",
+                    page=page_num,
+                    collected=len(people),
+                    requested=criteria.limit,
+                )
+            # Based on how many we've actually collected, not page_num *
+            # per_page — a page can return fewer than per_page (e.g. ranking
+            # cutoff) without total_entries itself being exhausted yet.
+            fetched_all_available = total_entries is not None and len(people) >= total_entries
+            if len(people) >= criteria.limit or fetched_all_available:
+                break
         return [self._to_masked_contact(p) for p in people[: criteria.limit]]
 
     async def discover_decision_makers(

@@ -44,6 +44,13 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  // Apollo delivers phone numbers asynchronously via webhook, not in the
+  // /enrich-phones response — poll for a bounded window after a click so
+  // numbers appear without a manual refresh, same as scoring already
+  // does. Bounded (unlike scoring, which stops once every lead has a
+  // score) because a "miss" here is permanent — Apollo just doesn't have
+  // that person's number — so polling would otherwise never stop.
+  const [phoneEnrichRequestedAt, setPhoneEnrichRequestedAt] = useState<number | null>(null);
 
   const batchQuery = useQuery({
     queryKey: ["search-batch", workspaceId, batchId],
@@ -64,7 +71,11 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
       // New batches sit on "idle" until the background job starts — poll
       // for a short window so Delivery ticks appear without a refresh.
       const recentIdle = data.outreach_status === "idle" && ageMs < 10 * 60 * 1000;
-      if (stillScoring || stillOutreach || recentIdle) return 4000;
+      const pendingPhoneReveal =
+        phoneEnrichRequestedAt !== null &&
+        Date.now() - phoneEnrichRequestedAt < 2 * 60 * 1000 &&
+        data.contacts.some((c) => c.phone_reveal_attempted && !c.phone);
+      if (stillScoring || stillOutreach || recentIdle || pendingPhoneReveal) return 4000;
       return false;
     },
   });
@@ -133,9 +144,10 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
       if (result.requested === 0) {
         toast.success("No leads need phone enrichment — already requested or missing");
       } else {
+        setPhoneEnrichRequestedAt(Date.now());
         toast.success(
           `Requested phone numbers for ${result.requested} lead${result.requested === 1 ? "" : "s"} — ` +
-            "Apollo delivers these shortly; refresh to see them"
+            "Apollo delivers these shortly, this page will update on its own"
         );
       }
       queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] });

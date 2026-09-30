@@ -35,6 +35,11 @@ class ContactRead(BaseModel):
     email: str | None
     email_status: str | None
     phone: str | None
+    #: True once a phone-reveal request has been sent to Apollo for this
+    #: contact, regardless of whether a number ever came back — lets the
+    #: UI tell "still waiting on Apollo's webhook" apart from "never
+    #: asked" without guessing from `phone` alone.
+    phone_reveal_attempted: bool
     linkedin_url: str | None
     city: str | None
     state: str | None

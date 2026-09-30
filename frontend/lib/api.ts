@@ -341,6 +341,9 @@ export interface Contact {
   seniority: string | null;
   email: string | null;
   phone: string | null;
+  /** True once a phone-reveal request has been sent to Apollo, regardless
+   * of whether a number ever came back — "still waiting" vs "never asked". */
+  phone_reveal_attempted: boolean;
   linkedin_url: string | null;
   city: string | null;
   state: string | null;

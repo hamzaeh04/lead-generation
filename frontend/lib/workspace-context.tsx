@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { getCurrentUser, listWorkspaces, type User, type Workspace } from "@/lib/api";
@@ -21,6 +21,7 @@ interface WorkspaceContextValue {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   // Reading localStorage directly during render would differ between the
   // server-rendered HTML (no window) and the client's first paint,
   // producing a hydration mismatch. Instead every render is "unmounted"
@@ -77,37 +78,23 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     else if (userQuery.isError) authStatus = "unauthenticated";
   }
 
-  // Diagnostic: a token exists but "me" still errored is the one path
-  // that bounces a genuinely-logged-in user back to /login (reported:
-  // logs in with correct credentials, lands on /dashboard, then gets
-  // sent straight back). Every reproduction attempt so far has this call
-  // succeed, so the next real occurrence needs to be caught in the
-  // wild — this logs exactly what the request/error looked like instead
-  // of the app just silently bouncing. Safe to remove once this is
-  // root-caused; does nothing when things are working normally.
+  // Auto-logout on session expiry: api.ts's response interceptor clears
+  // the stored tokens and fires this event the moment any authenticated
+  // request comes back 401 (expired/invalid access token, no working
+  // refresh flow to silently extend it). This is the one place that
+  // reacts to it — drop the now-dead react-query cache (a stale "me"/
+  // workspaces/leads response must never survive into the next login) and
+  // tell the user why they landed back on /login, instead of it happening
+  // silently.
   useEffect(() => {
-    if (mounted && hasToken && userQuery.isError) {
-      const err = userQuery.error as { message?: string; response?: { status?: number; data?: unknown } } | undefined;
-      const detail = {
-        message: err?.message,
-        responseStatus: err?.response?.status,
-        responseData: err?.response?.data,
-        failureCount: userQuery.failureCount,
-        failureReason: userQuery.failureReason,
-      };
-      // eslint-disable-next-line no-console
-      console.error("[auth-debug] /auth/me failed with a token present — bouncing to /login", detail);
-      // Console logging alone hasn't surfaced this in the wild yet — put
-      // it directly on screen too, so it can't be missed. Remove this
-      // whole effect (and the matching one in AppShell.tsx) once the
-      // "logs in fine, lands on /dashboard, then gets bounced back"
-      // report is root-caused; does nothing when things work normally.
-      toast.error(
-        `Auth debug: /auth/me failed (status ${detail.responseStatus ?? "?"}) — ${detail.message ?? "no message"}`,
-        { duration: 30000 }
-      );
+    function handleSessionExpired() {
+      queryClient.clear();
+      setHasToken(false);
+      toast.error("Your session has expired. Please log in again.");
     }
-  }, [mounted, hasToken, userQuery.isError, userQuery.error, userQuery.failureCount, userQuery.failureReason]);
+    window.addEventListener("auth:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("auth:session-expired", handleSessionExpired);
+  }, [queryClient]);
 
   const value: WorkspaceContextValue = {
     currentUser: userQuery.data ?? null,

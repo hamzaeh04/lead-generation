@@ -23,7 +23,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { LogoMarkIcon } from "@/components/icons";
 import { Avatar, AvatarFallback, initials } from "@/components/ui/Avatar";
 import {
@@ -237,27 +236,14 @@ export function AppShell({
   fullWidth?: boolean;
 }) {
   const router = useRouter();
-  const pathname = usePathname();
   const { currentUser, authStatus } = useWorkspace();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     if (authStatus === "unauthenticated") {
-      const hasAccessToken = typeof window !== "undefined" ? !!window.localStorage.getItem("access_token") : null;
-      // Diagnostic (see workspace-context.tsx for the matching log/toast
-      // at the source of this decision) — remove once the "logs in fine,
-      // lands on /dashboard, then gets bounced back" report is
-      // root-caused. This one is a catch-all: it fires on every redirect
-      // regardless of why, in case the cause isn't the one already
-      // covered in workspace-context.tsx.
-      // eslint-disable-next-line no-console
-      console.error("[auth-debug] AppShell redirecting to /login", { pathname, hasAccessToken });
-      toast.error(`Auth debug: AppShell bounced to /login from ${pathname} (token in storage: ${hasAccessToken})`, {
-        duration: 30000,
-      });
       router.replace("/login");
     }
-  }, [authStatus, router, pathname]);
+  }, [authStatus, router]);
 
   useEffect(() => {
     setMobileNavOpen(false);

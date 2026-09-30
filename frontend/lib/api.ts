@@ -30,6 +30,37 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Auto-logout on an expired/invalid session: a 401 from any authenticated
+// call (not just the initial /auth/me check) means the stored access token
+// is dead — Login/Register calls are excluded since those 401s are just
+// "wrong password," not an expired session, and never had a token to begin
+// with. Clearing the token here, synchronously, at the one place every
+// request passes through, is what actually prevents the stale-token bounce
+// loop: previously a 401 only changed in-memory auth state while the dead
+// token stayed in localStorage, so the very next request (or next page
+// load) hit the same 401 again. workspace-context listens for this event to
+// clear the query cache and show the user why they landed back on /login.
+function isAuthLoginOrRegister(url: string | undefined): boolean {
+  return !!url && (url.includes("/auth/login") || url.includes("/auth/register"));
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (
+      typeof window !== "undefined" &&
+      axios.isAxiosError(error) &&
+      error.response?.status === 401 &&
+      !isAuthLoginOrRegister(error.config?.url) &&
+      window.localStorage.getItem("access_token")
+    ) {
+      clearSession();
+      window.dispatchEvent(new Event("auth:session-expired"));
+    }
+    return Promise.reject(error);
+  }
+);
+
 export interface AuthTokens {
   access_token: string;
   refresh_token: string;

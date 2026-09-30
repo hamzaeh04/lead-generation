@@ -70,6 +70,9 @@ function BatchRow({ batch }: { batch: SearchBatch }) {
         <span className="text-sm text-fgMuted">
           {totalLeads} lead{totalLeads === 1 ? "" : "s"}
         </span>
+        <span className={cn("text-sm", batch.assigned_email ? "text-fgMuted" : "text-fgSubtle")}>
+          {batch.assigned_email || "No email assigned"}
+        </span>
         <ChevronRight className="h-4 w-4 text-fgSubtle" />
       </div>
     </Link>

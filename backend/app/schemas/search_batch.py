@@ -27,6 +27,12 @@ class SearchBatchRead(BaseModel):
     contacts_created: int
     contacts_matched: int
     email_setup_id: uuid.UUID | None = None
+    #: The actual SMTP address for email_setup_id — EmailSetup is a
+    #: separate table, so this can't be a plain from_attributes column;
+    #: the listing endpoint fills it in via one batch-fetched lookup, not
+    #: a query per row. None means no Email Setup is assigned to this
+    #: batch yet.
+    assigned_email: str | None = None
     outreach_campaign_id: uuid.UUID | None = None
     outreach_status: str = "idle"
     created_at: datetime

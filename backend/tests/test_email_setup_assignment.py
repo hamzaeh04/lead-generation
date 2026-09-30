@@ -175,3 +175,39 @@ async def test_email_freed_up_once_its_campaign_is_cancelled(client, db_session,
     )
 
     assert second_enroll.status_code == 200, second_enroll.text
+
+
+async def test_batch_listing_shows_assigned_email_or_none(client, db_session, unique_email):
+    """Leads page batch list: each row shows which SMTP account is
+    assigned to it (or None), not just the raw email_setup_id."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    setup_id = await _create_email_setup(client, headers, smtp_email="assigned@agency.example")
+
+    assigned_batch = await _make_batch_with_contact(
+        client, db_session, workspace_id, headers, email="one@acme.example"
+    )
+    campaign_id = await _create_campaign_with_step(client, headers, workspace_id, name="Campaign 1")
+    await client.post(f"/api/v1/campaigns/{campaign_id}/start", params={"workspace_id": workspace_id}, headers=headers)
+    await client.post(
+        f"/api/v1/campaigns/{campaign_id}/enroll",
+        params={"workspace_id": workspace_id},
+        json={"batch_ids": [str(assigned_batch)], "email_setup_id": setup_id},
+        headers=headers,
+    )
+
+    unassigned_batch = await _make_batch_with_contact(
+        client, db_session, workspace_id, headers, email="two@acme.example"
+    )
+
+    listing = await client.get(
+        "/api/v1/search-batches", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert listing.status_code == 200
+    by_id = {b["id"]: b for b in listing.json()}
+    assert by_id[str(assigned_batch)]["assigned_email"] == "assigned@agency.example"
+    assert by_id[str(unassigned_batch)]["assigned_email"] is None
+
+    detail = await client.get(
+        f"/api/v1/search-batches/{assigned_batch}", params={"workspace_id": workspace_id}, headers=headers
+    )
+    assert detail.json()["assigned_email"] == "assigned@agency.example"

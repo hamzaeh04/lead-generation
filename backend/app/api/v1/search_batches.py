@@ -9,6 +9,7 @@ from app.models.email_event import EmailEventType
 from app.models.user import User
 from app.providers.base import ProviderCategory
 from app.repositories.ai_generation_repository import AIGenerationRepository
+from app.repositories.email_setup_repository import EmailSetupRepository
 from app.repositories.search_batch_repository import SearchBatchRepository
 from app.schemas.search_batch import (
     BatchPhoneEnrichResponse,
@@ -34,7 +35,17 @@ async def list_search_batches(
     session: AsyncSession = Depends(get_db_session),
 ):
     repo = SearchBatchRepository(session)
-    return await repo.list_for_workspace(workspace_id, limit=limit, offset=offset)
+    batches = await repo.list_for_workspace(workspace_id, limit=limit, offset=offset)
+
+    setup_ids = [b.email_setup_id for b in batches if b.email_setup_id is not None]
+    emails_by_id = await EmailSetupRepository(session).emails_by_ids(setup_ids)
+
+    return [
+        SearchBatchRead(
+            **{**SearchBatchRead.model_validate(b).model_dump(), "assigned_email": emails_by_id.get(b.email_setup_id)}
+        )
+        for b in batches
+    ]
 
 
 @router.post("", response_model=SearchBatchRead, status_code=status.HTTP_201_CREATED)
@@ -101,8 +112,13 @@ async def get_search_batch(
     bounced = event_counts.get(EmailEventType.BOUNCED, 0)
     rejected = event_counts.get(EmailEventType.FAILED, 0)
 
+    assigned_email = None
+    if batch.email_setup_id is not None:
+        setup = await EmailSetupRepository(session).get_by_id(batch.email_setup_id)
+        assigned_email = setup.smtp_email if setup else None
+
     return SearchBatchDetail(
-        **SearchBatchRead.model_validate(batch).model_dump(),
+        **{**SearchBatchRead.model_validate(batch).model_dump(), "assigned_email": assigned_email},
         contacts=contacts,
         emails_sent=sent,
         bounced=bounced,

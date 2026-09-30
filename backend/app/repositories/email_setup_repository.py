@@ -28,6 +28,16 @@ class EmailSetupRepository:
         result = await self.session.execute(select(EmailSetup).where(EmailSetup.id == setup_id))
         return result.scalar_one_or_none()
 
+    async def emails_by_ids(self, setup_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        """id -> smtp_email for a batch listing page — one query for every
+        row instead of a lookup per batch."""
+        if not setup_ids:
+            return {}
+        result = await self.session.execute(
+            select(EmailSetup.id, EmailSetup.smtp_email).where(EmailSetup.id.in_(setup_ids))
+        )
+        return dict(result.all())
+
     async def get_by_email(
         self,
         smtp_email: str,

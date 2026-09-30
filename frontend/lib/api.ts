@@ -9,6 +9,15 @@ const API_BASE_URL = (
 
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
+  headers: {
+    // When served through an ngrok free-tier tunnel, any request without
+    // this header (or a prior click-through cookie) gets ngrok's own HTML
+    // "you are about to visit..." interstitial instead of a real response
+    // — breaking JSON parsing on exactly the requests this app makes in
+    // the background (e.g. the /auth/me call right after login). Harmless
+    // no-op against a real (non-ngrok) deployment.
+    "ngrok-skip-browser-warning": "true",
+  },
 });
 
 api.interceptors.request.use((config) => {

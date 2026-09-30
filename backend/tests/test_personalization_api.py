@@ -126,6 +126,46 @@ async def test_personalize_persists_and_returns_generation(client, db_session, u
     assert len(list_response.json()) == 1
 
 
+async def test_personalize_strips_em_and_en_dashes_from_ai_output(
+    client, db_session, unique_email, monkeypatch
+):
+    """The model is instructed never to use em/en dashes, but that
+    instruction can't be guaranteed — if one slips through anyway, the
+    service must strip it before the draft ever reaches the user."""
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    contact = await _make_contact(db_session, workspace_id)
+
+    db_session.add(
+        ProviderConfig(provider="openai", category=ProviderCategory.AI, enabled=True, priority=1)
+    )
+    await db_session.commit()
+
+    response_body = {
+        "subject": "Growth platform for Acme — built to scale",
+        "opening_line": "Hi Jordan — saw your second location.",
+        "body": "Managing multiple locations — and channels – is complex.",
+        "cta": "Worth a quick call?",
+        "outreach_angle": "Expansion — multi-location complexity",
+    }
+    monkeypatch.setattr(
+        "app.services.personalization_service.provider_factory.build_provider_for_workspace",
+        AsyncMock(return_value=_StubAIProvider(response_body)),
+    )
+
+    response = await client.post(
+        f"/api/v1/leads/{contact.id}/personalize",
+        params={"workspace_id": workspace_id},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    for field in ("subject", "opening_line", "body", "cta", "outreach_angle"):
+        assert "—" not in body[field]
+        assert "–" not in body[field]
+    assert body["body"] == "Managing multiple locations, and channels, is complex."
+
+
 async def test_personalize_includes_scraped_company_website_excerpt(
     client, db_session, unique_email, monkeypatch
 ):

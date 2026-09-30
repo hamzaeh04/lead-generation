@@ -50,7 +50,7 @@ _SELLER_CONTEXT: dict[str, str] = {
     ),
     "our_offer": (
         "NextApps helps organizations ship and scale reliable web apps and "
-        "mobile apps — from MVPs to production platforms — with clear delivery "
+        "mobile apps, from MVPs to production platforms, with clear delivery "
         "and modern product engineering."
     ),
 }
@@ -61,18 +61,20 @@ _INSTRUCTIONS = (
     "services (see our_company_name, our_services, and our_offer in the JSON). "
     "The email must clearly pitch those services and invite a short conversation "
     "about a possible web/mobile project or product build. "
-    "Personalize using ONLY the prospect facts in the JSON — never invent or "
+    "Personalize using ONLY the prospect facts in the JSON, never invent or "
     "assume any fact about the prospect not explicitly listed (no fabricated "
     "awards, customers, revenue, funding, projects, or partnerships). "
     "If a company_website_excerpt field is present, it is real text scraped "
-    "from the company's own site — you may reference it the same as any other "
+    "from the company's own site; you may reference it the same as any other "
     "listed fact, but still never state anything beyond what it or the other "
     "fields actually say. "
     "Connect their real context (role, company, location, public excerpt) to "
-    "why a modern web or mobile app partnership with NextApps could help — "
+    "why a modern web or mobile app partnership with NextApps could help, "
     "without inventing their needs. If facts are limited, keep personalization "
     "light and still pitch NextApps web/mobile services truthfully. "
-    "Tone: professional, concise, human — not salesy hype. "
+    "Tone: professional, concise, human, not salesy hype. "
+    "Never use an em dash or en dash (— or –) anywhere in the output; use a "
+    "period, comma, or separate sentence instead. "
     "Respond with a JSON object with exactly these string keys: "
     '"subject", "opening_line", "body", "cta", "outreach_angle". '
     "body should be the full email body (greeting through soft close) and "
@@ -148,7 +150,7 @@ class PersonalizationService:
                             source_fields=source_fields,
                         )
                     )
-                    parsed = self._parse_result_text(result.text)
+                    parsed = self._strip_dashes(self._parse_result_text(result.text))
                     usage.records_returned = 1
             except ProviderUnavailableError as exc:
                 logger.warning(
@@ -229,6 +231,20 @@ class PersonalizationService:
             fields["recent_intent_signal"] = signal.signal_text
             fields["recent_intent_signal_source"] = signal.source_url
         return fields
+
+    @staticmethod
+    def _strip_dashes(parsed: dict[str, str]) -> dict[str, str]:
+        """The instructions ask the model never to use em/en dashes, but that
+        can't be guaranteed (same caveat as the no-fabrication rule above) —
+        replace any that slip through with a comma so the output never
+        reaches the user with one."""
+        cleaned: dict[str, str] = {}
+        for key, value in parsed.items():
+            if isinstance(value, str):
+                value = value.replace(" — ", ", ").replace(" – ", ", ")
+                value = value.replace("—", ",").replace("–", ",")
+            cleaned[key] = value
+        return cleaned
 
     def _parse_result_text(self, text: str) -> dict[str, str]:
         try:

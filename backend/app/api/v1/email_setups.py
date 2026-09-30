@@ -28,8 +28,10 @@ async def list_email_setups(
     _current_user=Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    setups = await EmailSetupRepository(session).list_all()
-    return [to_read(s) for s in setups]
+    repo = EmailSetupRepository(session)
+    setups = await repo.list_all()
+    assignments = await repo.active_assignments()
+    return [to_read(s, assignments.get(s.id)) for s in setups]
 
 
 @router.post("", response_model=EmailSetupRead, status_code=201)

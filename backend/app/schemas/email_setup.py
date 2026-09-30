@@ -36,6 +36,13 @@ class EmailSetupRead(EmailSetupBase):
     has_password: bool = True
     created_at: datetime
     updated_at: datetime
+    #: EmailSetup is global (not workspace-scoped, see the model's own
+    #: docstring), but one SMTP mailbox sending two campaigns at once is
+    #: never what's wanted — set whenever this account is the sender for
+    #: a batch whose campaign hasn't finished (status not completed/
+    #: cancelled) yet, in ANY workspace. None means free to assign.
+    assigned_batch_id: uuid.UUID | None = None
+    assigned_batch_label: str | None = None
 
 
 class EmailSetupDefaults(BaseModel):

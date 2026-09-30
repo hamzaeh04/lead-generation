@@ -107,9 +107,14 @@ export function StartCampaignDialog({
 
   useEffect(() => {
     if (!open || emailSetupId || setups.length === 0) return;
-    const preferred = setups.find((s) => s.is_default) ?? setups[0];
+    // Never auto-pick an account that's already sending another batch's
+    // active campaign — only offer it as a default if it's actually free
+    // (or already assigned to this same batch, matching the dropdown's
+    // own idempotent-retry allowance).
+    const available = setups.filter((s) => !s.assigned_batch_id || s.assigned_batch_id === batchId);
+    const preferred = available.find((s) => s.is_default) ?? available[0];
     if (preferred) setEmailSetupId(preferred.id);
-  }, [open, setups, emailSetupId]);
+  }, [open, setups, emailSetupId, batchId]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -212,12 +217,21 @@ export function StartCampaignDialog({
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {setups.map((setup) => (
-                      <SelectItem key={setup.id} value={setup.id}>
-                        {setup.name} — {setup.smtp_email}
-                        {setup.is_default ? " (default)" : ""}
-                      </SelectItem>
-                    ))}
+                    {setups.map((setup) => {
+                      // Assigned to a DIFFERENT batch's still-active campaign
+                      // — one SMTP mailbox can't send two campaigns at once.
+                      // Assigned to *this* batch (e.g. re-opening this same
+                      // dialog) is fine to re-pick, matching the backend's
+                      // own idempotent-retry allowance.
+                      const takenByOther = !!setup.assigned_batch_id && setup.assigned_batch_id !== batchId;
+                      return (
+                        <SelectItem key={setup.id} value={setup.id} disabled={takenByOther}>
+                          {setup.name} — {setup.smtp_email}
+                          {setup.is_default ? " (default)" : ""}
+                          {takenByOther ? ` — Assigned to ${setup.assigned_batch_label}` : ""}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </Field>

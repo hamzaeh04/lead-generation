@@ -74,6 +74,19 @@ class CampaignService:
             setup = await self.email_setups.get_by_id(email_setup_id)
             if setup is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Email setup not found")
+            # One SMTP mailbox sending two campaigns at once is never what's
+            # wanted — reject server-side too (not just hidden in the UI),
+            # since a stale dropdown or a second tab could otherwise race
+            # past the frontend's own check. Re-enrolling the SAME batch(es)
+            # this account is already committed to is fine (idempotent retry).
+            conflict = (await self.email_setups.active_assignments()).get(email_setup_id)
+            if conflict is not None and conflict.batch_id not in (batch_ids or []):
+                conflict_label = conflict.batch_name or f"Batch {conflict.batch_sequence:02d}"
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    f"{setup.smtp_email} is already assigned to {conflict_label}'s active campaign — "
+                    "one SMTP account can only run one active campaign at a time.",
+                )
             if not campaign.steps and subject is None:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,

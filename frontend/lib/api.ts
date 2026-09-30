@@ -1232,6 +1232,11 @@ export interface EmailSetup {
   has_password: boolean;
   created_at: string;
   updated_at: string;
+  /** Set when this account is the sender for a batch whose campaign
+   * hasn't finished yet — one SMTP mailbox can't run two active
+   * campaigns at once. Null means free to assign. */
+  assigned_batch_id: string | null;
+  assigned_batch_label: string | null;
 }
 
 export interface EmailSetupDefaults {

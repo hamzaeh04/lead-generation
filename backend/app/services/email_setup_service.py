@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.email_setup import EmailSetup
-from app.repositories.email_setup_repository import EmailSetupRepository
+from app.repositories.email_setup_repository import ActiveAssignment, EmailSetupRepository
 from app.schemas.email_setup import (
     EmailSetupCreate,
     EmailSetupDefaults,
@@ -65,7 +65,7 @@ def _parse_bool(value: str, *, default: bool = True) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def to_read(setup: EmailSetup) -> EmailSetupRead:
+def to_read(setup: EmailSetup, assignment: ActiveAssignment | None = None) -> EmailSetupRead:
     return EmailSetupRead(
         id=setup.id,
         name=setup.name,
@@ -77,6 +77,10 @@ def to_read(setup: EmailSetup) -> EmailSetupRead:
         has_password=bool(setup.smtp_password),
         created_at=setup.created_at,
         updated_at=setup.updated_at,
+        assigned_batch_id=assignment.batch_id if assignment else None,
+        assigned_batch_label=(
+            (assignment.batch_name or f"Batch {assignment.batch_sequence:02d}") if assignment else None
+        ),
     )
 
 

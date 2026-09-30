@@ -196,13 +196,16 @@ export function RadialGauge({
   color = "accent",
   size = 108,
 }: {
-  /** 0–100 */
-  value: number;
+  /** 0–100, or null when there's no underlying data yet (e.g. no emails
+   * sent) — shown as an empty ring + "—", never coerced to a 0% ring,
+   * which would be visually identical to a real, measured 0%. */
+  value: number | null;
   label?: string;
   color?: keyof typeof CHART_COLORS;
   size?: number;
 }) {
-  const data = [{ value: Math.min(Math.max(value, 0), 100) }];
+  const hasData = value !== null;
+  const data = [{ value: hasData ? Math.min(Math.max(value, 0), 100) : 0 }];
   return (
     <div className="relative flex flex-col items-center justify-center" style={{ width: size, height: size }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -215,11 +218,16 @@ export function RadialGauge({
           barSize={8}
         >
           <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-          <RadialBar background={{ fill: "var(--surface-2)" }} dataKey="value" cornerRadius={8} fill={CHART_COLORS[color]} />
+          <RadialBar
+            background={{ fill: "var(--surface-2)" }}
+            dataKey="value"
+            cornerRadius={8}
+            fill={hasData ? CHART_COLORS[color] : "var(--surface-2)"}
+          />
         </RadialBarChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-lg font-semibold text-fg">{Math.round(value)}%</span>
+        <span className="font-mono text-lg font-semibold text-fg">{hasData ? `${Math.round(value)}%` : "—"}</span>
         {label && <span className="text-[11px] text-fgSubtle">{label}</span>}
       </div>
     </div>

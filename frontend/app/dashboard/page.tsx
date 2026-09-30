@@ -215,25 +215,25 @@ function DashboardContent() {
               )}
               <div className="flex flex-wrap items-center justify-around gap-4 border-t border-border pt-4">
                 <RadialGauge
-                  value={overview.delivery_rate !== null ? overview.delivery_rate * 100 : 0}
+                  value={overview.delivery_rate !== null ? overview.delivery_rate * 100 : null}
                   label="Delivery"
                   color="accent"
                   size={88}
                 />
                 <RadialGauge
-                  value={overview.open_rate !== null ? overview.open_rate * 100 : 0}
+                  value={overview.open_rate !== null ? overview.open_rate * 100 : null}
                   label="Open"
                   color="accent"
                   size={88}
                 />
                 <RadialGauge
-                  value={overview.reply_rate !== null ? overview.reply_rate * 100 : 0}
+                  value={overview.reply_rate !== null ? overview.reply_rate * 100 : null}
                   label="Reply"
                   color="success"
                   size={88}
                 />
                 <RadialGauge
-                  value={overview.bounce_rate !== null ? overview.bounce_rate * 100 : 0}
+                  value={overview.bounce_rate !== null ? overview.bounce_rate * 100 : null}
                   label="Bounce"
                   color="danger"
                   size={88}

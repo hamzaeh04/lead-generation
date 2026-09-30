@@ -738,3 +738,90 @@ async def test_apollo_phone_reveal_webhook_rejects_wrong_secret(client, monkeypa
     )
 
     assert response.status_code == 401
+
+
+async def test_batch_detail_reports_real_bounce_and_rejection_rate(client, db_session, unique_email):
+    """Batch page shows bounce rate + rejection rate instead of a static
+    "companies touched" count — computed fresh from real EmailEvent rows
+    across every campaign this batch's leads were ever enrolled in, not
+    stored on the batch itself. rejected (FAILED) = the provider refused
+    the message at send time; bounced (BOUNCED) = it sent fine and
+    bounced afterward — kept as two distinct rates, not conflated."""
+    import uuid
+
+    from app.models.campaign import Campaign
+    from app.models.campaign_recipient import CampaignRecipient, RecipientStatus
+    from app.models.contact import Contact
+    from app.models.email_event import EmailEvent, EmailEventType
+    from app.models.search_batch import SearchBatch, SearchBatchContact
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    ws_uuid = uuid.UUID(workspace_id)
+
+    contact = Contact(workspace_id=ws_uuid, first_name="Jordan", full_name="Jordan", email="jordan@acme.example")
+    db_session.add(contact)
+    await db_session.flush()
+
+    batch = SearchBatch(workspace_id=ws_uuid, sequence=1, provider="apollo", category=ProviderCategory.PERSON_DISCOVERY)
+    db_session.add(batch)
+    await db_session.flush()
+    db_session.add(SearchBatchContact(batch_id=batch.id, contact_id=contact.id, is_new=True))
+
+    campaign = Campaign(workspace_id=ws_uuid, name="Q1", from_email="agency@example.com")
+    db_session.add(campaign)
+    await db_session.flush()
+    recipient = CampaignRecipient(
+        workspace_id=ws_uuid, campaign_id=campaign.id, contact_id=contact.id, status=RecipientStatus.COMPLETED
+    )
+    db_session.add(recipient)
+    await db_session.flush()
+
+    # 2 sent, 1 of those bounced afterward, 1 separate attempt outright rejected.
+    db_session.add_all(
+        [
+            EmailEvent(workspace_id=ws_uuid, campaign_recipient_id=recipient.id, event_type=EmailEventType.SENT),
+            EmailEvent(workspace_id=ws_uuid, campaign_recipient_id=recipient.id, event_type=EmailEventType.SENT),
+            EmailEvent(workspace_id=ws_uuid, campaign_recipient_id=recipient.id, event_type=EmailEventType.BOUNCED),
+            EmailEvent(workspace_id=ws_uuid, campaign_recipient_id=recipient.id, event_type=EmailEventType.FAILED),
+        ]
+    )
+    await db_session.commit()
+    batch_id = batch.id
+
+    response = await client.get(
+        f"/api/v1/search-batches/{batch_id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["emails_sent"] == 2
+    assert body["bounced"] == 1
+    assert body["rejected"] == 1
+    assert body["bounce_rate"] == 0.5
+    assert body["rejection_rate"] == round(1 / 3, 4)
+
+
+async def test_batch_detail_bounce_rate_null_when_no_emails_sent(client, db_session, unique_email):
+    """No data yet must report None, never a 0% that looks like a real
+    measured rate."""
+    import uuid
+
+    from app.models.search_batch import SearchBatch
+
+    headers, workspace_id = await _register_and_get_workspace(client, unique_email)
+    batch = SearchBatch(
+        workspace_id=uuid.UUID(workspace_id), sequence=1, provider="apollo", category=ProviderCategory.PERSON_DISCOVERY
+    )
+    db_session.add(batch)
+    await db_session.commit()
+    batch_id = batch.id
+
+    response = await client.get(
+        f"/api/v1/search-batches/{batch_id}", params={"workspace_id": workspace_id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["emails_sent"] == 0
+    assert body["bounce_rate"] is None
+    assert body["rejection_rate"] is None

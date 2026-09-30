@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_workspace_member
 from app.core.config import Settings, get_settings
+from app.models.email_event import EmailEventType
 from app.models.user import User
 from app.providers.base import ProviderCategory
 from app.repositories.ai_generation_repository import AIGenerationRepository
@@ -95,7 +96,20 @@ async def get_search_batch(
                     settings=settings,
                 )
 
-    return SearchBatchDetail(**SearchBatchRead.model_validate(batch).model_dump(), contacts=contacts)
+    event_counts = await repo.email_event_counts(batch_id)
+    sent = event_counts.get(EmailEventType.SENT, 0)
+    bounced = event_counts.get(EmailEventType.BOUNCED, 0)
+    rejected = event_counts.get(EmailEventType.FAILED, 0)
+
+    return SearchBatchDetail(
+        **SearchBatchRead.model_validate(batch).model_dump(),
+        contacts=contacts,
+        emails_sent=sent,
+        bounced=bounced,
+        rejected=rejected,
+        bounce_rate=round(bounced / sent, 4) if sent else None,
+        rejection_rate=round(rejected / (sent + rejected), 4) if (sent + rejected) else None,
+    )
 
 
 @router.post("/{batch_id}/qualify-all", response_model=BatchQualifyResponse)

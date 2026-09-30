@@ -899,6 +899,17 @@ export interface SearchBatch {
 
 export interface SearchBatchDetail extends SearchBatch {
   contacts: Contact[];
+  /** Real counts across every campaign this batch's leads were ever
+   * emailed through — computed fresh on each read, not stored on the
+   * batch. `rejected` = the provider refused the message at send time
+   * (never sent); `bounced` = sent successfully, bounced afterward. */
+  emails_sent: number;
+  bounced: number;
+  rejected: number;
+  /** bounced / sent — null (not 0) until at least one email has been sent. */
+  bounce_rate: number | null;
+  /** rejected / (sent + rejected) — null until a send was attempted. */
+  rejection_rate: number | null;
 }
 
 export async function listSearchBatches(

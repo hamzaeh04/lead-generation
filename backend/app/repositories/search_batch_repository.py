@@ -5,7 +5,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.campaign_recipient import CampaignRecipient
 from app.models.contact import Contact
+from app.models.email_event import EmailEvent, EmailEventType
 from app.models.search_batch import SearchBatch, SearchBatchContact
 from app.providers.base import ProviderCategory
 
@@ -99,3 +101,17 @@ class SearchBatchRepository:
             .order_by(Contact.created_at.desc())
         )
         return list(result.scalars().unique().all())
+
+    async def email_event_counts(self, batch_id: uuid.UUID) -> dict[EmailEventType, int]:
+        """Real send/bounce/reject counts across every campaign this
+        batch's leads were ever enrolled in — not stored on the batch
+        itself (unlike companies_created etc.), computed fresh each read
+        since a lead can be emailed long after the batch that found it."""
+        result = await self.session.execute(
+            select(EmailEvent.event_type, func.count())
+            .join(CampaignRecipient, EmailEvent.campaign_recipient_id == CampaignRecipient.id)
+            .join(SearchBatchContact, SearchBatchContact.contact_id == CampaignRecipient.contact_id)
+            .where(SearchBatchContact.batch_id == batch_id)
+            .group_by(EmailEvent.event_type)
+        )
+        return dict(result.all())

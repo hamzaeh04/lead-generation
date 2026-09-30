@@ -50,6 +50,20 @@ class SearchBatchRead(BaseModel):
 
 class SearchBatchDetail(SearchBatchRead):
     contacts: list[ContactRead]
+    #: Real counts across every campaign this batch's leads were ever
+    #: emailed through — not stored on the batch, computed fresh on each
+    #: read. `rejected` = the provider refused the message at send time
+    #: (never even left, e.g. invalid address) — distinct from `bounced`,
+    #: which means it was sent successfully and bounced afterward.
+    emails_sent: int = 0
+    bounced: int = 0
+    rejected: int = 0
+    #: bounced / sent — None (not 0%) until at least one email has been
+    #: sent, so "no data yet" is never shown as if it were a real 0%.
+    bounce_rate: float | None = None
+    #: rejected / (sent + rejected) — None until at least one send was
+    #: attempted.
+    rejection_rate: float | None = None
 
 
 class BatchQualifyResponse(BaseModel):

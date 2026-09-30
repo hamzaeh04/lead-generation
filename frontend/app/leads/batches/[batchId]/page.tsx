@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type RowSelectionState } from "@tanstack/react-table";
-import { Download, Gauge, Mail, Phone, Sparkles, Users2, Zap } from "lucide-react";
+import { Download, Gauge, Mail, MailWarning, Phone, Sparkles, Users2, XCircle, Zap } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -324,11 +324,28 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <StatCard label="Total leads" value={totalLeads} icon={Users2} />
         <StatCard label="New contacts" value={batch.contacts_created} />
         <StatCard label="Already known" value={batch.contacts_matched} />
-        <StatCard label="Companies touched" value={batch.companies_created + batch.companies_matched} />
+        <StatCard
+          label="Bounce rate"
+          value={batch.bounce_rate !== null ? `${Math.round(batch.bounce_rate * 100)}%` : "—"}
+          hint={batch.emails_sent > 0 ? `${batch.bounced} of ${batch.emails_sent} sent` : "No emails sent yet"}
+          icon={MailWarning}
+          tone="danger"
+        />
+        <StatCard
+          label="Rejection rate"
+          value={batch.rejection_rate !== null ? `${Math.round(batch.rejection_rate * 100)}%` : "—"}
+          hint={
+            batch.emails_sent + batch.rejected > 0
+              ? `${batch.rejected} of ${batch.emails_sent + batch.rejected} attempted`
+              : "No sends attempted yet"
+          }
+          icon={XCircle}
+          tone="danger"
+        />
       </div>
 
       <DataTable

@@ -116,7 +116,7 @@ export default function RegisterPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
-            <Button type="submit" disabled={!mounted} loading={mutation.isPending} className="mt-1 w-full">
+            <Button type="submit" disabled={!mounted} loading={!mounted || mutation.isPending} className="mt-1 w-full">
               {mutation.isPending ? "Creating…" : "Create workspace"}
             </Button>
             {mutation.isError && (

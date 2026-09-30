@@ -107,7 +107,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
-            <Button type="submit" disabled={!mounted} loading={mutation.isPending} className="mt-1 w-full">
+            <Button type="submit" disabled={!mounted} loading={!mounted || mutation.isPending} className="mt-1 w-full">
               {mutation.isPending ? "Logging in…" : "Log in"}
             </Button>
             {mutation.isError && (

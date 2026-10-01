@@ -55,7 +55,7 @@ function ProviderCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "provider-card-3d group flex items-start gap-3 rounded-xl border p-4 text-left",
+        "provider-card-3d flex items-start gap-3 rounded-xl border p-4 text-left",
         active
           ? "border-accent bg-accentSoft"
           : "border-border bg-surface hover:border-accent/50"
@@ -63,8 +63,7 @@ function ProviderCard({
     >
       <span
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white transition-opacity duration-150",
-          "group-hover:opacity-90",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white",
           info.badgeClass
         )}
       >

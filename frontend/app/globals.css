@@ -34,8 +34,10 @@
     0 1px 2px rgba(16, 17, 20, 0.04),
     0 6px 16px -8px rgba(16, 17, 20, 0.1);
   --shadow-3d-hover-light:
-    0 1px 2px rgba(16, 17, 20, 0.05),
-    0 10px 24px -10px rgba(16, 17, 20, 0.14);
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 2px 4px rgba(16, 17, 20, 0.05),
+    0 12px 28px -10px rgba(16, 17, 20, 0.18),
+    0 28px 48px -18px rgba(42, 95, 224, 0.14);
 
   --bg-dark: #0a0b0d;
   --surface-dark: #17181c;
@@ -59,8 +61,10 @@
     0 1px 2px rgba(0, 0, 0, 0.35),
     0 8px 20px -10px rgba(0, 0, 0, 0.5);
   --shadow-3d-hover-dark:
-    0 1px 2px rgba(0, 0, 0, 0.4),
-    0 12px 28px -10px rgba(0, 0, 0, 0.6);
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 2px 4px rgba(0, 0, 0, 0.35),
+    0 14px 32px -12px rgba(0, 0, 0, 0.65),
+    0 28px 52px -18px rgba(76, 140, 255, 0.18);
 
   --bg: var(--bg-light);
   --surface: var(--surface-light);
@@ -165,37 +169,25 @@ body {
   border: 2px solid var(--bg);
 }
 
-/* ---- Cards + hover motion (calm, professional) ---- */
+/* ---- Cards + hover motion (3D shadow only) ---- */
 @layer components {
   .ui-card {
     box-shadow: var(--shadow-3d);
-    transition:
-      transform 180ms ease,
-      box-shadow 180ms ease,
-      border-color 180ms ease,
-      background-color 180ms ease;
+    transition: box-shadow 180ms ease;
   }
 
   .ui-card-interactive:hover {
-    transform: translateY(-1px);
     box-shadow: var(--shadow-3d-hover);
-    border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
   }
 
   /* Back-compat aliases used by older class names in pages */
   .card-3d {
     box-shadow: var(--shadow-3d);
-    transition:
-      transform 180ms ease,
-      box-shadow 180ms ease,
-      border-color 180ms ease,
-      background-color 180ms ease;
+    transition: box-shadow 180ms ease;
   }
 
   .card-3d-interactive:hover {
-    transform: translateY(-1px);
     box-shadow: var(--shadow-3d-hover);
-    border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
   }
 
   .stat-card {
@@ -204,31 +196,19 @@ body {
 
   .quick-link-3d {
     box-shadow: var(--shadow-3d);
-    transition:
-      transform 180ms ease,
-      box-shadow 180ms ease,
-      border-color 180ms ease,
-      background-color 180ms ease;
+    transition: box-shadow 180ms ease;
   }
 
   .quick-link-3d:hover {
-    transform: translateY(-1px);
     box-shadow: var(--shadow-3d-hover);
-    border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
-    background-color: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
   }
 
   .provider-card-3d {
     box-shadow: var(--shadow-3d);
-    transition:
-      transform 180ms ease,
-      box-shadow 180ms ease,
-      border-color 180ms ease,
-      background-color 180ms ease;
+    transition: box-shadow 180ms ease;
   }
 
   .provider-card-3d:hover {
-    transform: translateY(-1px);
     box-shadow: var(--shadow-3d-hover);
   }
 }
@@ -241,6 +221,5 @@ body {
   .quick-link-3d,
   .provider-card-3d {
     transition: none !important;
-    transform: none !important;
   }
 }

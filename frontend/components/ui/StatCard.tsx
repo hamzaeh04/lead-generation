@@ -35,16 +35,15 @@ export function StatCard({
   className?: string;
 }) {
   return (
-    <Card className={cn("stat-card group flex animate-card-rise flex-col gap-2 p-4", className)}>
+    <Card className={cn("stat-card flex animate-card-rise flex-col gap-2 p-4", className)}>
       <div className="flex items-center justify-between">
-        <span className="text-sm text-fgMuted transition-colors duration-150 group-hover:text-fg">{label}</span>
+        <span className="text-sm text-fgMuted">{label}</span>
         {Icon && (
           <span
             className={cn(
-              "transition-colors duration-150",
               tone
                 ? cn("flex h-7 w-7 items-center justify-center rounded-lg", toneBadgeClasses[tone])
-                : "text-fgSubtle group-hover:text-fgMuted"
+                : "text-fgSubtle"
             )}
           >
             <Icon className="h-4 w-4" />

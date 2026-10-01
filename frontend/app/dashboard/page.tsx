@@ -43,14 +43,14 @@ function QuickLink({
       href={href}
       className="quick-link-3d group flex items-center gap-3.5 rounded-xl border border-border bg-surface p-4"
     >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accentSoft text-accent transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accentSoft text-accent transition-colors duration-150 group-hover:bg-accent group-hover:text-white">
         <Icon className="h-4.5 w-4.5" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-base font-medium text-fg">{label}</span>
         <span className="truncate text-sm text-fgMuted">{description}</span>
       </span>
-      <ArrowRight className="h-4 w-4 shrink-0 text-fgSubtle transition-transform duration-300 group-hover:translate-x-1 group-hover:text-accent" />
+      <ArrowRight className="h-4 w-4 shrink-0 text-fgSubtle transition-colors duration-150 group-hover:text-accent" />
     </Link>
   );
 }

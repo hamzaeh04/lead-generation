@@ -63,8 +63,8 @@ function ProviderCard({
     >
       <span
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white transition-transform duration-300",
-          "group-hover:scale-110 group-hover:-rotate-3",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white transition-opacity duration-150",
+          "group-hover:opacity-90",
           info.badgeClass
         )}
       >

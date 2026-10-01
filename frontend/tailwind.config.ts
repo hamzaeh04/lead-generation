@@ -77,14 +77,14 @@ const config: Config = {
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "card-rise": {
-          from: { opacity: "0", transform: "translateY(10px) scale(0.98)" },
-          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+          from: { opacity: "0", transform: "translateY(4px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
         },
       },
       animation: {
         "fade-in": "fade-in 120ms ease-out",
         "slide-in-from-top": "slide-in-from-top 120ms ease-out",
-        "card-rise": "card-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both",
+        "card-rise": "card-rise 220ms ease-out both",
       },
     },
   },

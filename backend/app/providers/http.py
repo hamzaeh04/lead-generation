@@ -50,6 +50,30 @@ async def _do_request(
     return response
 
 
+def _error_detail(response: httpx.Response) -> str:
+    """Best-effort extraction of a provider's own error message (e.g.
+    Apollo's billing errors, which arrive as a 422 with a real explanation
+    in the body) — without this, every non-2xx collapses into a bare
+    status code and a genuine cause like "out of credits" looks identical
+    to a malformed request, making it impossible to tell apart without
+    reproducing the call by hand."""
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text[:300] if response.text else "no response body"
+    if isinstance(body, dict):
+        for key in ("message", "error", "detail"):
+            value = body.get(key)
+            if isinstance(value, str) and value:
+                return value
+            error_details = body.get("error_details")
+            if isinstance(error_details, dict):
+                nested = error_details.get("message")
+                if isinstance(nested, str) and nested:
+                    return nested
+    return str(body)[:300]
+
+
 async def request_json(
     client: httpx.AsyncClient, method: str, url: str, *, provider: str, **kwargs
 ) -> dict:
@@ -68,7 +92,7 @@ async def request_json(
         raise ProviderUnavailableError(f"{provider}: authentication rejected (check API key)")
     if response.status_code >= 400:
         raise ProviderUnavailableError(
-            f"{provider}: request failed with HTTP {response.status_code}"
+            f"{provider}: request failed with HTTP {response.status_code} — {_error_detail(response)}"
         )
 
     try:

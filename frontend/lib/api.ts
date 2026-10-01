@@ -944,6 +944,14 @@ export interface SearchBatchDetail extends SearchBatch {
   bounce_rate: number | null;
   /** rejected / (sent + rejected) — null until a send was attempted. */
   rejection_rate: number | null;
+  /** True while a scoring/email-reveal/phone-enrichment sweep is
+   * genuinely still running server-side — reflects real state (a sweep
+   * was requested AND work is still outstanding), not anything
+   * client-local, so it reads correctly even after navigating away and
+   * back or reloading. */
+  scoring_active: boolean;
+  email_enrichment_active: boolean;
+  phone_enrichment_active: boolean;
 }
 
 export async function listSearchBatches(

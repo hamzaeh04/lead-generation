@@ -78,6 +78,14 @@ class SearchBatchDetail(SearchBatchRead):
     #: rejected / (sent + rejected) — None until at least one send was
     #: attempted.
     rejection_rate: float | None = None
+    #: True while a scoring/email-reveal/phone-enrichment sweep is
+    #: genuinely still running — a timestamp was set (auto right after
+    #: search, or a manual "all" click) AND work is still outstanding.
+    #: Reflects real server-side state, not anything client-local, so it
+    #: reads correctly even after navigating away and back or reloading.
+    scoring_active: bool = False
+    email_enrichment_active: bool = False
+    phone_enrichment_active: bool = False
 
 
 class BatchQualifyResponse(BaseModel):

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Integer, String, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -50,6 +51,22 @@ class SearchBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     #: idle | drafting | sending | completed | failed | skipped
     outreach_status: Mapped[str] = mapped_column(String(32), default="idle", nullable=False)
+
+    #: Set whenever a scoring/reveal/phone-enrich sweep is scheduled for
+    #: this batch (auto right after search, or a manual "all" click) —
+    #: lets the API report whether that sweep is genuinely still running
+    #: (timestamp set AND work still outstanding), independent of any
+    #: frontend tab being open. Never reset back to None on completion —
+    #: "still outstanding" is recomputed from current contact state each
+    #: time, so a finished sweep naturally reads as inactive regardless of
+    #: when it was requested.
+    qualify_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reveal_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Phone enrichment is bounded (see PhoneEnrichmentService/batch page
+    #: docstrings — Apollo's "no number found" is a permanent miss with no
+    #: explicit signal), so this timestamp also caps how long "active" is
+    #: reported, not just whether a sweep ever ran.
+    phone_enrich_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     links: Mapped[list["SearchBatchContact"]] = relationship(
         back_populates="batch", cascade="all, delete-orphan"

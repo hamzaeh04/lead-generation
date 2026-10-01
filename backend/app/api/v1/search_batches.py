@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -147,6 +148,38 @@ async def get_search_batch(
         setup = await EmailSetupRepository(session).get_by_id(batch.email_setup_id)
         assigned_email = setup.smtp_email if setup else None
 
+    def _within(requested_at, window: timedelta) -> bool:
+        if requested_at is None:
+            return False
+        # SQLite (tests) hands back a naive datetime even for a
+        # DateTime(timezone=True) column — Postgres doesn't — so normalize
+        # before subtracting rather than let the two backends disagree.
+        if requested_at.tzinfo is None:
+            requested_at = requested_at.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - requested_at) < window
+
+    # All three are bounded, not just "requested AND still outstanding" —
+    # a reveal that fails for a reason that will keep failing identically
+    # (e.g. a provider account out of credits — see http.py's error-detail
+    # extraction) never flips email_reveal_attempted, so "still
+    # outstanding" alone would read active forever even though the
+    # background sweep that was supposed to handle it already finished
+    # (successfully or not). Each window is sized to how long that kind of
+    # sweep genuinely takes: qualify() is a real per-contact AI call
+    # (30-40+s each, sequential — a 25-lead batch can take 15+ minutes,
+    # see qualify-all's own docstring); reveal is a much faster per-contact
+    # API call; phone is webhook-delivered and was already bounded before
+    # this feature existed.
+    scoring_active = _within(batch.qualify_requested_at, timedelta(minutes=45)) and any(
+        c.latest_qualification is None for c in contacts
+    )
+    email_enrichment_active = _within(batch.reveal_requested_at, timedelta(minutes=10)) and any(
+        c.revealable for c in contacts
+    )
+    phone_enrichment_active = _within(batch.phone_enrich_requested_at, timedelta(minutes=2)) and any(
+        c.phone_reveal_attempted and not c.phone for c in contacts
+    )
+
     return SearchBatchDetail(
         **{**SearchBatchRead.model_validate(batch).model_dump(), "assigned_email": assigned_email},
         contacts=contacts,
@@ -155,6 +188,9 @@ async def get_search_batch(
         rejected=rejected,
         bounce_rate=round(bounced / sent, 4) if sent else None,
         rejection_rate=round(rejected / (sent + rejected), 4) if (sent + rejected) else None,
+        scoring_active=scoring_active,
+        email_enrichment_active=email_enrichment_active,
+        phone_enrichment_active=phone_enrichment_active,
     )
 
 
@@ -194,6 +230,8 @@ async def qualify_all_in_batch(
             contact_ids=[c.id for c in to_score],
             settings=settings,
         )
+        batch.qualify_requested_at = datetime.now(timezone.utc)
+        await session.commit()
     return BatchQualifyResponse(
         scheduled=len(to_score), already_scored=len(contacts) - len(to_score), total=len(contacts)
     )
@@ -236,6 +274,8 @@ async def reveal_all_in_batch(
             provider=batch.provider,
             settings=settings,
         )
+        batch.reveal_requested_at = datetime.now(timezone.utc)
+        await session.commit()
     return BatchRevealResponse(
         scheduled=len(to_reveal), already_revealed=len(contacts) - len(to_reveal), total=len(contacts)
     )
@@ -281,6 +321,9 @@ async def enrich_phones_in_batch(
     result = await service.request_many(
         workspace_id=workspace_id, contacts=contacts, provider=batch.provider, webhook_url=webhook_url
     )
+    if result.requested:
+        batch.phone_enrich_requested_at = datetime.now(timezone.utc)
+        await session.commit()
     return BatchPhoneEnrichResponse(
         requested=result.requested, skipped=result.skipped, failed=result.failed, total=result.total
     )

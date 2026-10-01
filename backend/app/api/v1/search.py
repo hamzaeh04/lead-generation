@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,7 @@ from app.api.deps import get_current_user, get_db_session
 from app.core.config import Settings, get_settings
 from app.models.user import User
 from app.providers.base import DiscoveryCriteria
+from app.repositories.search_batch_repository import SearchBatchRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.schemas.search import (
     DiscoveryCriteriaSchema,
@@ -107,6 +110,8 @@ async def execute_search(
     # existed after clicking "Generate draft".
     contact_ids = [contact.id for contact in result["contacts"]]
     batch_id = result.get("batch_id")
+    batch = await SearchBatchRepository(session).get_by_id(payload.workspace_id, batch_id) if batch_id else None
+    now = datetime.now(timezone.utc)
     if contact_ids and payload.provider in _AUTO_REVEAL_PROVIDERS:
         background_tasks.add_task(
             reveal_contacts_in_background,
@@ -115,6 +120,8 @@ async def execute_search(
             provider=payload.provider,
             settings=settings,
         )
+        if batch is not None:
+            batch.reveal_requested_at = now
     if contact_ids:
         background_tasks.add_task(
             qualify_contacts_in_background,
@@ -122,6 +129,10 @@ async def execute_search(
             contact_ids=contact_ids,
             settings=settings,
         )
+        if batch is not None:
+            batch.qualify_requested_at = now
+    if batch is not None:
+        await session.commit()
     if batch_id is not None:
         background_tasks.add_task(
             draft_batch_in_background,

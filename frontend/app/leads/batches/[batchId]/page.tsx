@@ -10,6 +10,7 @@ import { AppShell } from "@/components/AppShell";
 import { StartCampaignDialog } from "@/components/campaigns/StartCampaignDialog";
 import { ImportLeadsCsvDialog } from "@/components/leads/ImportLeadsCsvDialog";
 import { bulkTargetStatuses, leadColumns } from "@/components/leads/lead-table-columns";
+import { ActiveDot } from "@/components/ui/ActiveDot";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -46,48 +47,37 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  // Apollo delivers phone numbers asynchronously via webhook, not in the
-  // /enrich-phones response — poll for a bounded window after a click so
-  // numbers appear without a manual refresh, same as scoring already
-  // does. Bounded (unlike scoring, which stops once every lead has a
-  // score) because a "miss" here is permanent — Apollo just doesn't have
-  // that person's number — so polling would otherwise never stop.
-  const [phoneEnrichRequestedAt, setPhoneEnrichRequestedAt] = useState<number | null>(null);
 
   const batchQuery = useQuery({
     queryKey: ["search-batch", workspaceId, batchId],
     queryFn: () => getSearchBatch(workspaceId!, batchId),
     enabled: !!workspaceId,
-    // Scoring AND email reveal both run as background tasks after the
-    // search response returns (see search_service.qualify_contacts_in_
-    // background / reveal_contacts_in_background — reveal used to run
-    // inline, but a full-size search's sequential per-contact Apollo/
-    // Smartlead calls could take well over a minute, past ngrok/proxy
-    // timeouts) — the leads on this page can go from masked/unscored to
-    // revealed/scored with nobody clicking anything, so poll for that
-    // instead of requiring a manual reload. Stops on its own once every
-    // lead has settled, so it doesn't poll forever on an already-settled
-    // batch.
+    // Scoring, email reveal, and phone enrichment all run as background
+    // work (see search_service.qualify_contacts_in_background /
+    // reveal_contacts_in_background, and Apollo's phone-reveal webhook) —
+    // the leads on this page can update with nobody clicking anything, so
+    // poll for that instead of requiring a manual reload.
+    // scoring_active/email_enrichment_active/phone_enrichment_active are
+    // server-computed (a sweep was requested AND work is still
+    // outstanding) so this reads correctly even right after a fresh page
+    // load, not just within the same tab session that clicked a button.
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      const stillScoring = data.contacts.some((c) => c.latest_qualification === null);
       const stillOutreach = ["drafting", "sending"].includes(data.outreach_status);
       const ageMs = Date.now() - new Date(data.created_at).getTime();
       // New batches sit on "idle" until the background job starts — poll
       // for a short window so Delivery ticks appear without a refresh.
       const recentIdle = data.outreach_status === "idle" && ageMs < 10 * 60 * 1000;
-      const pendingPhoneReveal =
-        phoneEnrichRequestedAt !== null &&
-        Date.now() - phoneEnrichRequestedAt < 2 * 60 * 1000 &&
-        data.contacts.some((c) => c.phone_reveal_attempted && !c.phone);
-      // Only Apollo/Smartlead auto-reveal email — a manually-created batch
-      // never sets email_reveal_attempted, which would otherwise poll
-      // forever.
-      const stillRevealingEmail =
-        (data.provider === "apollo" || data.provider === "smartlead") &&
-        data.contacts.some((c) => !c.email_reveal_attempted);
-      if (stillScoring || stillOutreach || recentIdle || pendingPhoneReveal || stillRevealingEmail) return 4000;
+      if (
+        data.scoring_active ||
+        data.email_enrichment_active ||
+        data.phone_enrichment_active ||
+        stillOutreach ||
+        recentIdle
+      ) {
+        return 4000;
+      }
       return false;
     },
   });
@@ -165,7 +155,6 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
       if (result.requested === 0) {
         toast.success("No leads need phone enrichment — already requested or missing");
       } else {
-        setPhoneEnrichRequestedAt(Date.now());
         toast.success(
           `Requested phone numbers for ${result.requested} lead${result.requested === 1 ? "" : "s"} — ` +
             "Apollo delivers these shortly, this page will update on its own"
@@ -303,38 +292,53 @@ function BatchDetailContent({ batchId }: { batchId: string }) {
               queryClient.invalidateQueries({ queryKey: ["search-batch", workspaceId, batchId] })
             }
           />
-          <Button
-            size="sm"
-            variant="ghost"
-            loading={revealMutation.isPending}
-            onClick={() => revealMutation.mutate()}
-            title="Enrich any leads missing email/details — skips leads already enriched"
-          >
-            <Mail className="h-3.5 w-3.5" />
-            Enrich emails
-          </Button>
-          {batch.provider === "apollo" && (
+          <div className="flex items-center gap-1.5">
+            <ActiveDot
+              active={batch.email_enrichment_active}
+              label="Email enrichment is running in the background"
+            />
             <Button
               size="sm"
               variant="ghost"
-              loading={enrichPhonesMutation.isPending}
-              onClick={() => enrichPhonesMutation.mutate()}
-              title="Request phone numbers from Apollo (extra credits) — delivered shortly after, not instantly"
+              loading={revealMutation.isPending}
+              onClick={() => revealMutation.mutate()}
+              title="Enrich any leads missing email/details — skips leads already enriched"
             >
-              <Phone className="h-3.5 w-3.5" />
-              Enrich phones
+              <Mail className="h-3.5 w-3.5" />
+              Enrich emails
             </Button>
+          </div>
+          {batch.provider === "apollo" && (
+            <div className="flex items-center gap-1.5">
+              <ActiveDot
+                active={batch.phone_enrichment_active}
+                label="Phone enrichment is running in the background"
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={enrichPhonesMutation.isPending}
+                onClick={() => enrichPhonesMutation.mutate()}
+                title="Request phone numbers from Apollo (extra credits) — delivered shortly after, not instantly"
+              >
+                <Phone className="h-3.5 w-3.5" />
+                Enrich phones
+              </Button>
+            </div>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            loading={qualifyMutation.isPending}
-            onClick={() => qualifyMutation.mutate()}
-            title="Score any leads missing an AI qualification — skips leads already scored"
-          >
-            <Gauge className="h-3.5 w-3.5" />
-            Score leads
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <ActiveDot active={batch.scoring_active} label="Lead scoring is running in the background" />
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={qualifyMutation.isPending}
+              onClick={() => qualifyMutation.mutate()}
+              title="Score any leads missing an AI qualification — skips leads already scored"
+            >
+              <Gauge className="h-3.5 w-3.5" />
+              Score leads
+            </Button>
+          </div>
         </div>
       </Card>
 

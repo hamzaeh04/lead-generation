@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -r kill)",
+      "Bash(./.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000)",
+      "Bash(npm run *)"
+    ]
+  }
+}
